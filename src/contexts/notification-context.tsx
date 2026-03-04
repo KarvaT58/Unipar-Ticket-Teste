@@ -3,11 +3,15 @@
 import * as React from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
+import { useNotificationMute } from "@/contexts/notification-mute-context"
 import { playNotificationSound } from "@/lib/notification-sound"
 import type { Notification } from "@/lib/atendimento/notification-types"
 
 type NotificationContextType = {
   totalUnread: number
+  /** Total unread notifications for tickets (for Atendimentos sidebar badge) */
+  totalTicketUnread: number
+  iniciadosTabUnread: number
   atendimentosTabUnread: number
   filaTabUnread: number
   encerradosTabUnread: number
@@ -46,12 +50,14 @@ const NotificationContext = React.createContext<NotificationContextType | undefi
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth()
+  const { muted: notificationSoundMuted } = useNotificationMute()
   const supabase = createClient()
   const [notifications, setNotifications] = React.useState<Notification[]>([])
   const [myTicketIds, setMyTicketIds] = React.useState<Set<string>>(new Set())
   const [filaTicketIds, setFilaTicketIds] = React.useState<Set<string>>(new Set())
   const [encerradosTicketIds, setEncerradosTicketIds] = React.useState<Set<string>>(new Set())
   const [historicoTicketIds, setHistoricoTicketIds] = React.useState<Set<string>>(new Set())
+  const [iniciadosTicketIds, setIniciadosTicketIds] = React.useState<Set<string>>(new Set())
   const [ticketTitleByTicketId, setTicketTitleByTicketId] = React.useState<Record<string, string>>({})
   const [announcementTitleByAnnouncementId, setAnnouncementTitleByAnnouncementId] = React.useState<Record<string, string>>({})
   const [chatSenderNameByUserId, setChatSenderNameByUserId] = React.useState<Record<string, string>>({})
@@ -64,6 +70,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setFilaTicketIds(new Set())
       setEncerradosTicketIds(new Set())
       setHistoricoTicketIds(new Set())
+      setIniciadosTicketIds(new Set())
       setTicketTitleByTicketId({})
       setAnnouncementTitleByAnnouncementId({})
       setIsLoading(false)
@@ -78,7 +85,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     const list = (unread ?? []) as Notification[]
 
-    const [myRes, filaRes, encerradosRes, historicoRes] = await Promise.all([
+    const [myRes, filaRes, encerradosRes, historicoRes, iniciadosRes] = await Promise.all([
       supabase.from("tickets").select("id").eq("assigned_to_user_id", profile.id).eq("status", "in_progress"),
       profile.department
         ? supabase.from("tickets").select("id").eq("target_sector", profile.department).eq("status", "queue")
@@ -90,6 +97,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         .eq("status", "closed")
         .eq("assigned_to_user_id", profile.id)
         .neq("created_by", profile.id),
+      supabase.from("tickets").select("id").eq("created_by", profile.id).neq("status", "closed"),
     ])
 
     setNotifications(list)
@@ -97,6 +105,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setFilaTicketIds(new Set((filaRes.data ?? []).map((t: { id: string }) => t.id)))
     setEncerradosTicketIds(new Set((encerradosRes.data ?? []).map((t: { id: string }) => t.id)))
     setHistoricoTicketIds(new Set((historicoRes.data ?? []).map((t: { id: string }) => t.id)))
+    setIniciadosTicketIds(new Set((iniciadosRes.data ?? []).map((t: { id: string }) => t.id)))
 
     if (list.length > 0) {
       const ticketIds = [...new Set(list.map((n) => n.ticket_id).filter(Boolean))] as string[]
@@ -155,16 +164,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         },
         () => {
           fetchUnread()
-          playNotificationSound()
+          if (!notificationSoundMuted) playNotificationSound()
         }
       )
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, profile?.id, fetchUnread])
+  }, [supabase, profile?.id, fetchUnread, notificationSoundMuted])
 
   const totalUnread = notifications.length
+  const totalTicketUnread = notifications.filter((n) => n.ticket_id != null).length
+  const iniciadosTabUnread = notifications.filter((n) => n.ticket_id && iniciadosTicketIds.has(n.ticket_id)).length
   const atendimentosTabUnread = notifications.filter((n) => n.ticket_id && myTicketIds.has(n.ticket_id)).length
   const filaTabUnread = notifications.filter((n) => n.ticket_id && filaTicketIds.has(n.ticket_id)).length
   const encerradosTabUnread = notifications.filter((n) => n.ticket_id && encerradosTicketIds.has(n.ticket_id)).length
@@ -274,6 +285,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const value: NotificationContextType = {
     totalUnread,
+    totalTicketUnread,
+    iniciadosTabUnread,
     atendimentosTabUnread,
     filaTabUnread,
     encerradosTabUnread,

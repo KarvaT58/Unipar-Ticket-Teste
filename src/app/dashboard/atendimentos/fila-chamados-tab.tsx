@@ -30,8 +30,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { IconDotsVertical, IconUserCheck, IconUsers, IconArrowRight, IconSearch } from "@tabler/icons-react"
+import { IconDotsVertical, IconUserCheck, IconUsers, IconArrowRight } from "@tabler/icons-react"
+import { TicketSearchFilterBar, filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", {
@@ -53,7 +53,7 @@ export function FilaChamadosTab() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [selectedSector, setSelectedSector] = useState<string>("")
   const [selectedUserId, setSelectedUserId] = useState<string>("")
-  const [search, setSearch] = useState("")
+  const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
 
   const fetchQueue = useCallback(() => {
     if (!supabase || !profile?.department) return
@@ -130,40 +130,23 @@ export function FilaChamadosTab() {
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-semibold">Fila de chamados</h2>
+      <TicketSearchFilterBar
+        value={filter}
+        onChange={setFilter}
+        dateLabel="Data de abertura"
+      />
       {queueTickets.length === 0 ? (
         <p className="text-muted-foreground">Nenhum chamado na fila do seu setor.</p>
       ) : (
-        <>
-          <div className="relative max-w-sm">
-            <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por título ou descrição..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <div className="grid gap-2">
-            {queueTickets
-              .filter(
-                (t) =>
-                  !search.trim() ||
-                  t.title.toLowerCase().includes(search.toLowerCase().trim()) ||
-                  (t.description && t.description.toLowerCase().includes(search.toLowerCase().trim()))
-              )
-              .length === 0 ? (
+        <div className="grid gap-2">
+          {(() => {
+            const filtered = filterTicketsBySearchAndDate(queueTickets, filter, "created_at")
+            return filtered.length === 0 ? (
               <p className="text-sm text-muted-foreground py-2">
-                Nenhum chamado encontrado para a busca.
+                Nenhum chamado encontrado para os filtros.
               </p>
             ) : (
-              queueTickets
-                .filter(
-                  (t) =>
-                    !search.trim() ||
-                    t.title.toLowerCase().includes(search.toLowerCase().trim()) ||
-                    (t.description && t.description.toLowerCase().includes(search.toLowerCase().trim()))
-                )
-                .map((t) => (
+              filtered.map((t) => (
                     <Card key={t.id} className="overflow-hidden transition-shadow hover:shadow-md py-2 px-4">
                       <div className="flex items-center justify-between gap-2 min-h-0">
                         <Link href={`/dashboard/atendimentos/${t.id}`} className="min-w-0 flex-1">
@@ -206,9 +189,9 @@ export function FilaChamadosTab() {
                     </div>
                   </Card>
                 ))
-            )}
-          </div>
-        </>
+            )
+          })()}
+        </div>
       )}
 
       <Dialog open={transferSectorOpen} onOpenChange={setTransferSectorOpen}>

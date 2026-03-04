@@ -17,6 +17,11 @@ function getNotificationTitle(type: string): string {
   if (type === "new_announcement") return "Novo anúncio"
   if (type === "new_ticket") return "Novo chamado"
   if (type === "new_message") return "Nova mensagem"
+  if (type === "ticket_transferred") return "Chamado transferido"
+  if (type === "ticket_edited") return "Chamado editado"
+  if (type === "ticket_closed") return "Chamado encerrado"
+  if (type === "ticket_reopened") return "Chamado reaberto"
+  if (type === "ticket_returned_to_queue") return "Chamado devolvido à fila"
   if (type === "chat_message") return "Nova mensagem no chat"
   if (type === "chat_priority_message") return "Mensagem prioritária"
   if (type === "task_deadline") return "Prazo da tarefa"
@@ -33,6 +38,11 @@ function getNotificationDescription(
     return announcementTitle ? `"${announcementTitle}" foi publicado para a equipe.` : "Um novo anúncio foi publicado."
   if (type === "new_ticket") return `O chamado "${ticketTitle}" foi aberto na fila do seu setor.`
   if (type === "new_message") return `Nova mensagem no chamado "${ticketTitle}".`
+  if (type === "ticket_transferred") return `O chamado "${ticketTitle}" foi transferido para você ou para seu setor.`
+  if (type === "ticket_edited") return `O chamado "${ticketTitle}" foi editado pelo autor.`
+  if (type === "ticket_closed") return `O chamado "${ticketTitle}" foi encerrado.`
+  if (type === "ticket_reopened") return `O chamado "${ticketTitle}" foi reaberto.`
+  if (type === "ticket_returned_to_queue") return `O chamado "${ticketTitle}" foi devolvido à fila do seu setor.`
   if (type === "chat_message") return chatSenderName ? `Mensagem de ${chatSenderName} no chat interno.` : "Nova mensagem no chat interno."
   if (type === "chat_priority_message") return chatSenderName ? `Mensagem prioritária de ${chatSenderName}.` : "Mensagem prioritária no chat."
   if (type === "task_deadline") return "Uma tarefa está no prazo ou vencida."
@@ -101,7 +111,9 @@ export function HeaderNotificationIcon() {
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       {item.type === "new_announcement" ? (
                         <IconCalendarEvent className="size-5" />
-                      ) : item.type === "new_ticket" ? (
+                      ) : item.type === "new_ticket" ||
+                          item.type === "new_message" ||
+                          item.type.startsWith("ticket_") ? (
                         <IconTicket className="size-5" />
                       ) : item.type === "chat_message" ? (
                         <IconMessageCircle className="size-5" />
@@ -128,7 +140,7 @@ export function HeaderNotificationIcon() {
             })}
             <div className="border-t mt-1">
               <Link
-                href="/dashboard/atendimentos?tab=atendimentos"
+                href="/dashboard/atendimentos?tab=andamento"
                 onClick={() => setOpen(false)}
                 className="block px-3 py-3 text-center text-sm font-medium text-primary hover:bg-muted/50"
               >

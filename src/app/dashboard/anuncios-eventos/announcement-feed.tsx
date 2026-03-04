@@ -157,8 +157,7 @@ export function AnnouncementFeed() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold">Anúncio/Eventos</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
         <Button onClick={openCreate}>
           <IconCalendarEvent className="mr-2 size-4" />
           Criar anúncio

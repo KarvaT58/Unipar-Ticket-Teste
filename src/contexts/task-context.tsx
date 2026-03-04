@@ -3,6 +3,7 @@
 import * as React from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
+import { useNotificationMute } from "@/contexts/notification-mute-context"
 import { playNotificationSound } from "@/lib/notification-sound"
 import type { TaskBoard, Task, TaskAttachment, TaskPriority } from "@/lib/tasks/types"
 
@@ -64,6 +65,7 @@ function getDueTimestamp(task: Task): number | null {
 export function TaskProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
   const { profile } = useAuth()
+  const { muted: notificationSoundMuted } = useNotificationMute()
   const [boards, setBoards] = React.useState<TaskBoard[]>([])
   const [tasksByBoardId, setTasksByBoardId] = React.useState<Record<string, Task[]>>({})
   const [attachmentsByTaskId, setAttachmentsByTaskId] = React.useState<Record<string, TaskAttachment[]>>({})
@@ -233,7 +235,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
         .from("tasks")
         .update({ deadline_notified_at: new Date().toISOString() })
         .eq("id", task.id)
-      playNotificationSound()
+      if (!notificationSoundMuted) playNotificationSound()
       if (notif?.id) {
         deadlineNotificationIdRef.current = notif.id
         setDeadlinePopup(task)
@@ -270,13 +272,13 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
       hasFetchedDeadlineOnLoadRef.current = true
       deadlineNotificationIdRef.current = notif.id
       setDeadlinePopup(task as Task)
-      playNotificationSound()
+      if (!notificationSoundMuted) playNotificationSound()
       await fetchUnreadDeadlineCount()
     })()
     return () => {
       cancelled = true
     }
-  }, [supabase, profile?.id, fetchUnreadDeadlineCount])
+  }, [supabase, profile?.id, fetchUnreadDeadlineCount, notificationSoundMuted])
 
   const dismissDeadlinePopup = React.useCallback(
     (notificationId?: string) => {
@@ -433,12 +435,36 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
   const moveTask = React.useCallback(
     async (taskId: string, toBoardId: string, newPosition: number) => {
       if (!supabase || !profile?.id) return
-      await supabase
-        .from("tasks")
-        .update({ board_id: toBoardId, position: newPosition, updated_at: new Date().toISOString() })
-        .eq("id", taskId)
-        .eq("user_id", profile.id)
-      await refetchTasks()
+
+      let fromBoardId: string | null = null
+      setTasksByBoardId((prev) => {
+        for (const bid of Object.keys(prev)) {
+          const idx = prev[bid].findIndex((t) => t.id === taskId)
+          if (idx >= 0) {
+            fromBoardId = bid
+            const task = prev[bid][idx]
+            const next = { ...prev }
+            next[bid] = next[bid].filter((t) => t.id !== taskId)
+            const targetList = [...(next[toBoardId] ?? [])]
+            const inserted = { ...task, board_id: toBoardId, position: newPosition, updated_at: new Date().toISOString() }
+            targetList.splice(Math.min(newPosition, targetList.length), 0, inserted)
+            next[toBoardId] = targetList
+            return next
+          }
+        }
+        return prev
+      })
+
+      try {
+        await supabase
+          .from("tasks")
+          .update({ board_id: toBoardId, position: newPosition, updated_at: new Date().toISOString() })
+          .eq("id", taskId)
+          .eq("user_id", profile.id)
+        await refetchTasks()
+      } catch {
+        await refetchTasks()
+      }
     },
     [supabase, profile?.id, refetchTasks]
   )

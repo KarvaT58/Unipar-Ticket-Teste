@@ -43,7 +43,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { IconPlus, IconUpload, IconX, IconPencil, IconTrash, IconDotsVertical, IconSearch } from "@tabler/icons-react"
+import { IconPlus, IconUpload, IconX, IconPencil, IconTrash, IconDotsVertical } from "@tabler/icons-react"
+import { TicketSearchFilterBar, filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -85,7 +86,7 @@ export function IniciarAtendimentoTab() {
   const [editLoading, setEditLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
   const [ticketToDelete, setTicketToDelete] = useState<Ticket | null>(null)
-  const [search, setSearch] = useState("")
+  const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
 
   const fetchMyTickets = useCallback(() => {
     if (!supabase || !profile) return
@@ -148,7 +149,7 @@ export function IniciarAtendimentoTab() {
 
   async function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!supabase || !editingTicket) return
+    if (!supabase || !editingTicket || !profile) return
     setEditLoading(true)
     await supabase
       .from("tickets")
@@ -170,6 +171,24 @@ export function IniciarAtendimentoTab() {
         .from("ticket_messages")
         .update({ content: editDescription.trim() })
         .eq("id", (firstMsg as { id: string }).id)
+    }
+    const { data: sectorProfiles } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("department", editSector)
+      .neq("id", profile.id)
+    const userIds = (sectorProfiles ?? []).map((r: { id: string }) => r.id)
+    if (editingTicket.assigned_to_user_id && !userIds.includes(editingTicket.assigned_to_user_id)) {
+      userIds.push(editingTicket.assigned_to_user_id)
+    }
+    if (userIds.length > 0) {
+      await supabase.from("notifications").insert(
+        userIds.map((userId) => ({
+          user_id: userId,
+          ticket_id: editingTicket.id,
+          type: "ticket_edited",
+        }))
+      )
     }
     setEditOpen(false)
     setEditingTicket(null)
@@ -390,40 +409,24 @@ export function IniciarAtendimentoTab() {
         </Dialog>
       </div>
 
+      <TicketSearchFilterBar
+        value={filter}
+        onChange={setFilter}
+        dateLabel="Data de abertura"
+      />
       {myTickets.length === 0 ? (
         <p className="text-muted-foreground">Você ainda não abriu nenhum chamado.</p>
       ) : (
         <>
-          <div className="relative">
-            <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por título ou descrição..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 max-w-sm"
-            />
-          </div>
           <div className="grid gap-2">
-            {myTickets
-              .filter(
-                (t) =>
-                  !search.trim() ||
-                  t.title.toLowerCase().includes(search.toLowerCase().trim()) ||
-                  (t.description && t.description.toLowerCase().includes(search.toLowerCase().trim()))
-              )
-              .length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">
-                Nenhum chamado encontrado para a busca.
-              </p>
-            ) : (
-              myTickets
-                .filter(
-                  (t) =>
-                    !search.trim() ||
-                    t.title.toLowerCase().includes(search.toLowerCase().trim()) ||
-                    (t.description && t.description.toLowerCase().includes(search.toLowerCase().trim()))
-                )
-                .map((t) => (
+            {(() => {
+              const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
+              return filtered.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  Nenhum chamado encontrado para os filtros.
+                </p>
+              ) : (
+                filtered.map((t) => (
             <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
               <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4">
                 <div className="flex items-center justify-between gap-2 min-h-0">
@@ -489,7 +492,8 @@ export function IniciarAtendimentoTab() {
               </Card>
             </Link>
                 ))
-            )}
+              )
+            })()}
           </div>
         </>
       )}

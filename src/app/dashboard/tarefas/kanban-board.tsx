@@ -8,12 +8,12 @@ import {
   TouchSensor,
   useSensor,
   useSensors,
-  closestCorners,
+  rectIntersection,
 } from "@dnd-kit/core"
 import { useTasks } from "@/contexts/task-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { IconPlus, IconLayoutKanban } from "@tabler/icons-react"
+import { IconPlus, IconCheckbox } from "@tabler/icons-react"
 import { KanbanColumn } from "./kanban-column"
 import { TaskDialog } from "./task-dialog"
 import { cn } from "@/lib/utils"
@@ -50,18 +50,19 @@ export function KanbanBoard() {
       if (!over) return
       const taskId = String(active.id)
       const overId = String(over.id)
+
+      if (taskId === overId) return
+
       const sourceBoard = boards.find((b) => (tasksByBoardId[b.id] ?? []).some((t) => t.id === taskId))
       if (!sourceBoard) return
       const sourceTasks = tasksByBoardId[sourceBoard.id] ?? []
-      const sourceIndex = sourceTasks.findIndex((t) => t.id === taskId)
-      if (sourceIndex < 0) return
+      if (sourceTasks.findIndex((t) => t.id === taskId) < 0) return
 
       if (boardIdsSet.has(overId)) {
         const targetBoardId = overId
         if (targetBoardId === sourceBoard.id) return
         const targetTasks = tasksByBoardId[targetBoardId] ?? []
-        const newPosition = targetTasks.length
-        void moveTask(taskId, targetBoardId, newPosition)
+        void moveTask(taskId, targetBoardId, targetTasks.length)
         return
       }
 
@@ -85,7 +86,7 @@ export function KanbanBoard() {
           if (fromIdx < 0) return
           const [removed] = reordered.splice(fromIdx, 1)
           const insertIdx = fromIdx < targetIndex ? targetIndex - 1 : targetIndex
-          reordered.splice(insertIdx, 0, removed)
+          reordered.splice(Math.max(0, insertIdx), 0, removed)
           void reorderTasks(targetBoardId, reordered.map((t) => t.id))
         } else {
           void moveTask(taskId, targetBoardId, targetIndex)
@@ -115,8 +116,8 @@ export function KanbanBoard() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <header className="flex shrink-0 flex-col gap-1 border-b bg-background/95 px-3 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:px-6">
         <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <IconLayoutKanban className="size-5" />
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 dark:border-red-900/50 dark:bg-red-950/50">
+            <IconCheckbox className="size-5" />
           </div>
           <div>
             <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Tarefas</h1>
@@ -127,7 +128,11 @@ export function KanbanBoard() {
         </div>
       </header>
 
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={rectIntersection}
+        onDragEnd={handleDragEnd}
+      >
         <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden p-3 pb-4 sm:p-4 sm:pb-6">
           {boards.map((board) => (
             <KanbanColumn

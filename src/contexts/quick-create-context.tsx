@@ -129,7 +129,7 @@ export function QuickCreateProvider({ children }: { children: React.ReactNode })
     setOpen(false)
     setLoading(false)
     toast.success("Chamado criado.")
-    router.push("/dashboard/atendimentos?tab=iniciar")
+    router.push("/dashboard/atendimentos?tab=iniciados")
   }
 
   return (

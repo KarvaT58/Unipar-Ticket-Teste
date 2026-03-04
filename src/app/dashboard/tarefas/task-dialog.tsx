@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { DatePicker } from "@/components/ui/date-picker"
 import { IconPaperclip, IconTrash } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 
@@ -237,10 +238,10 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
               </SelectContent>
             </Select>
             {(dueMode === "date" || dueMode === "datetime") && (
-              <Input
-                type="date"
+              <DatePicker
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                onChange={setDueDate}
+                placeholder="dd/mm/aaaa"
                 className="mt-1"
               />
             )}

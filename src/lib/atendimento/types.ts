@@ -20,6 +20,7 @@ export type TicketMessage = {
   user_id: string
   content: string
   created_at: string
+  is_internal_note?: boolean
 }
 
 export type MessageAttachment = {

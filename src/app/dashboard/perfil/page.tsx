@@ -3,7 +3,10 @@
 import { useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
+import { useNotificationMute } from "@/contexts/notification-mute-context"
+import { getSectorLabel } from "@/lib/atendimento/sectors"
 import { AppSidebar } from "@/components/app-sidebar"
+import { PageHeader } from "@/components/page-header"
 import { SiteHeader } from "@/components/site-header"
 import {
   SidebarInset,
@@ -17,9 +20,31 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar"
 import { Label } from "@/components/ui/label"
-import { IconUpload, IconTrash } from "@tabler/icons-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { IconUpload, IconTrash, IconUserCircle, IconVolume, IconVolumeOff } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+
+const USER_STATUS_OPTIONS = [
+  { value: "__none__", label: "Não definido" },
+  { value: "online", label: "Online" },
+  { value: "offline", label: "Offline" },
+  { value: "ferias", label: "Férias" },
+  { value: "intervalo", label: "Intervalo" },
+  { value: "almoco", label: "Almoço" },
+  { value: "fim_de_semana", label: "Fim de semana" },
+  { value: "feriado", label: "Feriado" },
+  { value: "ocupado", label: "Ocupado" },
+  { value: "reuniao", label: "Reunião" },
+  { value: "home_office", label: "Home office" },
+  { value: "ausente", label: "Ausente" },
+] as const
 
 const ACCEPTED_IMAGE_TYPES = "image/jpeg,image/png,image/gif,image/webp"
 const MAX_SIZE_MB = 2
@@ -35,10 +60,12 @@ function getInitials(name: string) {
 
 export default function PerfilPage() {
   const { profile, setProfile } = useAuth()
+  const { muted: notificationSoundMuted, setMuted: setNotificationSoundMuted } = useNotificationMute()
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [statusSaving, setStatusSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -75,7 +102,8 @@ export default function PerfilPage() {
     }
 
     const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path)
-    const avatarUrl = urlData.publicUrl
+    // Append cache-busting param so the browser shows the new image immediately (same path = cached otherwise)
+    const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`
 
     const { error: updateError } = await supabase
       .from("profiles")
@@ -123,6 +151,23 @@ export default function PerfilPage() {
     toast.success("Foto de perfil removida.")
   }
 
+  async function handleStatusChange(value: string) {
+    if (!profile || !supabase) return
+    const status = value === "__none__" || value === "" ? null : value
+    setStatusSaving(true)
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ user_status: status })
+      .eq("id", profile.id)
+    setStatusSaving(false)
+    if (updateError) {
+      toast.error("Erro ao atualizar o status.")
+      return
+    }
+    setProfile({ ...profile, user_status: status ?? undefined })
+    toast.success("Status atualizado.")
+  }
+
   if (!profile) {
     return (
       <SidebarProvider
@@ -136,8 +181,15 @@ export default function PerfilPage() {
         <AppSidebar variant="inset" />
         <SidebarInset>
           <SiteHeader />
-          <div className="flex flex-1 flex-col p-4 lg:p-6">
-            <p className="text-muted-foreground">Faça login para acessar seu perfil.</p>
+          <div className="flex flex-1 flex-col">
+            <PageHeader
+              title="Perfil"
+              description="Altere sua foto de perfil. Ela será exibida na sidebar e no menu."
+              icon={<IconUserCircle className="size-5" />}
+            />
+            <div className="flex-1 px-4 pb-6 lg:px-6">
+              <p className="mt-4 text-muted-foreground">Faça login para acessar seu perfil.</p>
+            </div>
           </div>
         </SidebarInset>
       </SidebarProvider>
@@ -156,15 +208,84 @@ export default function PerfilPage() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader />
-        <div className="flex flex-1 flex-col p-4 lg:p-6">
-          <div className="mx-auto w-full max-w-md space-y-6">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Perfil</h1>
-              <p className="text-muted-foreground">
-                Altere sua foto de perfil. Ela será exibida na sidebar e no menu.
-              </p>
-            </div>
-
+        <div className="flex flex-1 flex-col">
+          <PageHeader
+            title="Perfil"
+            description="Altere sua foto de perfil. Ela será exibida na sidebar e no menu."
+            icon={<IconUserCircle className="size-5" />}
+          />
+          <div className="flex-1 px-4 pb-6 lg:px-6">
+            <div className="mt-6 grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Informações</CardTitle>
+                <CardDescription>Seus dados no sistema.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground">Setor</Label>
+                  <p className="text-sm font-medium">
+                    {profile.department ? getSectorLabel(profile.department) : "—"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Som das notificações</CardTitle>
+                <CardDescription>
+                  Ative ou desative o som ao receber notificações.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setNotificationSoundMuted(!notificationSoundMuted)}
+                >
+                  {notificationSoundMuted ? (
+                    <>
+                      <IconVolumeOff className="size-4" />
+                      Ativar som das notificações
+                    </>
+                  ) : (
+                    <>
+                      <IconVolume className="size-4" />
+                      Mutar som das notificações
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Status</CardTitle>
+                <CardDescription>
+                  Status exibido na dashboard e para outros usuários.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="user-status">Meu status</Label>
+                  <Select
+                    value={profile.user_status ?? "__none__"}
+                    onValueChange={handleStatusChange}
+                    disabled={statusSaving}
+                  >
+                    <SelectTrigger id="user-status">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {USER_STATUS_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>Foto de perfil</CardTitle>
@@ -215,9 +336,11 @@ export default function PerfilPage() {
                 </div>
               </CardContent>
             </Card>
+            </div>
           </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
   )
 }
+

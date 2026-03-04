@@ -3,6 +3,7 @@
 import * as React from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
+import { useNotificationMute } from "@/contexts/notification-mute-context"
 import { useNotifications } from "@/contexts/notification-context"
 import { playNotificationSound } from "@/lib/notification-sound"
 import type {
@@ -63,6 +64,7 @@ function getOtherUserId(conv: { user_a_id: string; user_b_id: string }, myId: st
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
   const { profile } = useAuth()
+  const { muted: notificationSoundMuted } = useNotificationMute()
   const { markChatConversationAsRead, markNotificationAsRead } = useNotifications()
   const [conversations, setConversations] = React.useState<ChatConversationWithPeer[]>([])
   const [pinnedConversationIds, setPinnedConversationIds] = React.useState<Set<string>>(new Set())
@@ -322,7 +324,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
           if (isForMe && activeConversationIdRef.current === row.conversation_id) {
             markChatConversationAsRead(row.conversation_id)
-            playNotificationSound()
+            if (!notificationSoundMuted) playNotificationSound()
           }
           if (row.is_priority && isForMe && recipientId === profile.id) {
             const { data: senderProfile } = await supabase
@@ -371,7 +373,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, profile?.id, conversations, fetchConversations, markChatConversationAsRead])
+  }, [supabase, profile?.id, conversations, fetchConversations, markChatConversationAsRead, notificationSoundMuted])
 
   const startConversation = React.useCallback(
     async (otherUserId: string): Promise<string | null> => {

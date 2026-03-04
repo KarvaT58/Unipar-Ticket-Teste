@@ -2,9 +2,12 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
+import { IconMessageCircle } from "@tabler/icons-react"
 import { AppSidebar } from "@/components/app-sidebar"
+import { PageHeader } from "@/components/page-header"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator"
 import { useChat } from "@/contexts/chat-context"
 import { useNotifications } from "@/contexts/notification-context"
 import { ConversationSidebar } from "./conversation-sidebar"
@@ -50,8 +53,14 @@ function ChatInternoContent() {
       <AppSidebar variant="inset" />
       <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <SiteHeader />
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-          <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <PageHeader
+            title="Chat interno"
+            description="Conversas em tempo real com a equipe — mensagens diretas."
+            icon={<IconMessageCircle className="size-5" />}
+          />
+          <Separator className="shrink-0" />
+          <div className="flex min-h-0 flex-1 overflow-hidden p-0">
             <ConversationSidebar />
             <ConversationView conversation={activeConversation} />
           </div>

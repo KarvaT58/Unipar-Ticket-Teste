@@ -9,12 +9,14 @@ import type { Ticket, TicketMessage, MessageAttachment } from "@/lib/atendimento
 import type { Profile } from "@/contexts/auth-context"
 import { SECTORS } from "@/lib/atendimento/sectors"
 import { AppSidebar } from "@/components/app-sidebar"
+import { PageHeader } from "@/components/page-header"
 import { SiteHeader } from "@/components/site-header"
 import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu,
@@ -39,14 +41,17 @@ import {
 import { Label } from "@/components/ui/label"
 import {
   IconArrowLeft,
-  IconDotsVertical,
-  IconArrowRight,
-  IconUsers,
   IconArrowBack,
+  IconArrowRight,
   IconCircleX,
-  IconPaperclip,
-  IconX,
+  IconDotsVertical,
   IconFile,
+  IconHeadset,
+  IconLock,
+  IconPaperclip,
+  IconRefresh,
+  IconUsers,
+  IconX,
 } from "@tabler/icons-react"
 
 const ACCEPTED_FILE_TYPES =
@@ -217,6 +222,7 @@ function MessageBubble({
   profileName,
   supabase,
   isOpeningDescription,
+  isInternalNote,
 }: {
   message: TicketMessage
   attachments: MessageAttachment[]
@@ -224,6 +230,7 @@ function MessageBubble({
   profileName?: string
   supabase: NonNullable<ReturnType<typeof createClient>>
   isOpeningDescription?: boolean
+  isInternalNote?: boolean
 }) {
   const [name, setName] = useState(profileName ?? "…")
   useEffect(() => {
@@ -251,12 +258,20 @@ function MessageBubble({
       className={
         isOpeningDescription
           ? "max-w-[85%] sm:max-w-[320px] rounded-lg bg-transparent px-0 py-0 text-sm"
-          : isOwn
-            ? "ml-auto max-w-[85%] sm:max-w-[320px] rounded-xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm"
-            : "max-w-[85%] sm:max-w-[320px] rounded-xl bg-muted px-3 py-2 text-sm shadow-sm"
+          : isInternalNote
+            ? "max-w-[85%] sm:max-w-[320px] rounded-xl border border-dashed border-muted-foreground/40 bg-muted/60 px-3 py-2 text-sm dark:bg-muted/40"
+            : isOwn
+              ? "ml-auto max-w-[85%] sm:max-w-[320px] rounded-xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm"
+              : "max-w-[85%] sm:max-w-[320px] rounded-xl bg-muted px-3 py-2 text-sm shadow-sm"
       }
     >
-      {!isOwn && !isOpeningDescription && (
+      {isInternalNote && (
+        <p className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <IconLock className="size-3.5" />
+          Anotação interna (só seu setor)
+        </p>
+      )}
+      {!isOwn && !isOpeningDescription && !isInternalNote && (
         <p className="mb-1 text-xs font-medium text-muted-foreground">{name}</p>
       )}
       {message.content.trim() ? (
@@ -349,6 +364,8 @@ export default function AtendimentoTicketPage() {
   const [closingDescription, setClosingDescription] = useState("")
   const [closingLoading, setClosingLoading] = useState(false)
   const [closerName, setCloserName] = useState<string | null>(null)
+  const [isInternalNote, setIsInternalNote] = useState(false)
+  const [reopenLoading, setReopenLoading] = useState(false)
 
   const fetchTicket = useCallback(() => {
     if (!supabase || !ticketId) return
@@ -451,12 +468,14 @@ export default function AtendimentoTicketPage() {
 
     setSending(true)
 
+    const canSendInternalNote = ticket && profile.department === ticket.target_sector
     const { data: insertedMsg, error: msgError } = await supabase
       .from("ticket_messages")
       .insert({
         ticket_id: ticketId,
         user_id: profile.id,
         content: hasText ? newMessage.trim() : " ",
+        is_internal_note: canSendInternalNote && isInternalNote,
       })
       .select("id")
       .single()
@@ -489,6 +508,7 @@ export default function AtendimentoTicketPage() {
 
     setNewMessage("")
     setFiles([])
+    setIsInternalNote(false)
     if (fileInputRef.current) fileInputRef.current.value = ""
     fetchMessages()
     setSending(false)
@@ -511,7 +531,7 @@ export default function AtendimentoTicketPage() {
     setClosingDescription("")
     if (!error) {
       const isAuthor = ticket.created_by === profile.id
-      router.push(isAuthor ? "/dashboard/atendimentos?tab=encerrados" : "/dashboard/atendimentos?tab=historico")
+      router.push(isAuthor ? "/dashboard/atendimentos?tab=encerrados" : "/dashboard/historico-atendimentos")
     }
   }
 
@@ -522,6 +542,27 @@ export default function AtendimentoTicketPage() {
       .update({ assigned_to_user_id: null, status: "queue" })
       .eq("id", ticketId)
     router.push("/dashboard/atendimentos")
+  }
+
+  async function handleReabrir() {
+    if (!supabase || !ticketId || !ticket) return
+    setReopenLoading(true)
+    const { error } = await supabase
+      .from("tickets")
+      .update({
+        status: "queue",
+        closed_at: null,
+        closed_description: null,
+        closed_by_user_id: null,
+        assigned_to_user_id: null,
+      })
+      .eq("id", ticketId)
+    setReopenLoading(false)
+    if (!error) {
+      fetchTicket()
+      fetchMessages()
+      router.push("/dashboard/atendimentos?tab=iniciados")
+    }
   }
 
   async function handleTransferSector() {
@@ -607,12 +648,26 @@ export default function AtendimentoTicketPage() {
       <AppSidebar variant="inset" />
       <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <SiteHeader />
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 lg:p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <PageHeader
+            title="Chamado"
+            description="Detalhes e mensagens do atendimento."
+            icon={<IconHeadset className="size-5" />}
+          />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-6 lg:px-6">
           {/* Top bar: back + title + actions */}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b pb-4 mt-2">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <Button variant="ghost" size="sm" className="shrink-0" asChild>
-                <Link href="/dashboard/atendimentos">
+                <Link
+                  href={
+                    isAuthor
+                      ? ticket.status === "closed"
+                        ? "/dashboard/atendimentos?tab=encerrados"
+                        : "/dashboard/atendimentos?tab=iniciados"
+                      : "/dashboard/atendimentos?tab=andamento"
+                  }
+                >
                   <IconArrowLeft className="size-4" />
                   Voltar
                 </Link>
@@ -654,6 +709,18 @@ export default function AtendimentoTicketPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+            {ticket.status === "closed" && isAuthor && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={handleReabrir}
+                disabled={reopenLoading}
+              >
+                <IconRefresh className="size-4" />
+                {reopenLoading ? "Reabrindo…" : "Reabrir chamado"}
+              </Button>
+            )}
           </div>
 
           {/* Full-height chat area: scroll only inside the messages box */}
@@ -682,6 +749,7 @@ export default function AtendimentoTicketPage() {
                         isOwn={m.user_id === profile.id}
                         profileName={m.user_id === profile.id ? profile.name : undefined}
                         supabase={supabase!}
+                        isInternalNote={!!m.is_internal_note}
                       />
                     )
                     if (isOpening) {
@@ -720,12 +788,12 @@ export default function AtendimentoTicketPage() {
                     )
                   })}
                   {ticket.status === "closed" && (
-                    <div className="rounded-xl border-2 border-amber-500/40 bg-amber-500/10 p-4 dark:border-amber-400/30 dark:bg-amber-500/15">
-                      <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                    <div className="rounded-xl border-2 border-red-500/40 bg-red-500/10 p-4 dark:border-red-400/30 dark:bg-red-500/15">
+                      <p className="text-sm font-semibold text-red-800 dark:text-red-200">
                         Encerrado por {closerName ?? "…"}
                       </p>
                       {ticket.closed_description?.trim() ? (
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-amber-900/90 dark:text-amber-100/90">
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-red-900/90 dark:text-red-100/90">
                           {ticket.closed_description}
                         </p>
                       ) : null}
@@ -737,6 +805,16 @@ export default function AtendimentoTicketPage() {
 
             {canSendMessages && (
               <div className="flex flex-col gap-3 rounded-xl border bg-background p-3 shadow-sm">
+                {profile.department === ticket.target_sector && (
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox
+                      checked={isInternalNote}
+                      onCheckedChange={(checked) => setIsInternalNote(checked === true)}
+                      aria-label="Anotação interna (só seu setor)"
+                    />
+                    <span>Anotação interna (só seu setor vê)</span>
+                  </label>
+                )}
                 {files.length > 0 && (
                   <div
                     className={
@@ -808,6 +886,7 @@ export default function AtendimentoTicketPage() {
                 <p className="text-sm text-muted-foreground">Este atendimento foi encerrado.</p>
               </div>
             )}
+          </div>
           </div>
         </div>
       </SidebarInset>

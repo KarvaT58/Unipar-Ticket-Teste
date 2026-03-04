@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   IconDotsVertical,
   IconLogout,
@@ -13,6 +14,16 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,11 +61,16 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar()
   const { profile, signOut } = useAuth()
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const displayName = profile?.name ?? fallbackUser.name
   const displayEmail = profile?.email ?? fallbackUser.email
-  const displayDepartment = profile?.department ?? fallbackUser.department
   const avatarSrc = profile?.avatar_url ?? fallbackUser.avatar
   const avatarSrcOrUndefined = avatarSrc?.trim() || undefined
+
+  const handleConfirmLogout = () => {
+    setLogoutOpen(false)
+    signOut()
+  }
 
   return (
     <SidebarMenu>
@@ -76,11 +92,6 @@ export function NavUser({
                 <span className="truncate text-xs text-muted-foreground">
                   {displayEmail}
                 </span>
-                {displayDepartment && (
-                  <span className="truncate text-xs text-muted-foreground">
-                    Setor: {displayDepartment}
-                  </span>
-                )}
               </div>
               <IconDotsVertical className="ml-auto size-4" />
             </SidebarMenuButton>
@@ -104,11 +115,6 @@ export function NavUser({
                   <span className="truncate text-xs text-muted-foreground">
                     {displayEmail}
                   </span>
-                  {displayDepartment && (
-                    <span className="truncate text-xs text-muted-foreground">
-                      Setor: {displayDepartment}
-                    </span>
-                  )}
                 </div>
               </div>
             </DropdownMenuLabel>
@@ -122,13 +128,29 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()}>
+            <DropdownMenuItem onClick={() => setLogoutOpen(true)}>
               <IconLogout />
               Sair
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
+      <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair do sistema</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja sair? Você precisará fazer login novamente para acessar o sistema.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmLogout}>
+              Sim, sair
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarMenu>
   )
 }

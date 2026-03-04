@@ -18,6 +18,10 @@ const CHAT_ATTACHMENTS_BUCKET = "chat-attachments"
 
 type MessageInputProps = {
   conversationId: string
+  /** Optional prefix for upload path (e.g. "groups" for group chat). Final path: prefix ? `${prefix}/${conversationId}/...` : `${conversationId}/...` */
+  uploadPathPrefix?: string
+  /** When false, hides priority checkbox and never sends is_priority (e.g. for group chat). Default true. */
+  showPriority?: boolean
   disabled?: boolean
   onTyping?: (typing: boolean) => void
   onSend: (
@@ -38,6 +42,8 @@ const TYPING_DEBOUNCE_MS = 1500
 
 export function MessageInput({
   conversationId,
+  uploadPathPrefix,
+  showPriority = true,
   disabled,
   onTyping,
   onSend,
@@ -77,7 +83,9 @@ export function MessageInput({
     async (file: File): Promise<{ path: string; name: string } | null> => {
       if (!supabase) return null
       const ext = file.name.split(".").pop() ?? "bin"
-      const path = `${conversationId}/${crypto.randomUUID()}.${ext}`
+      const path = uploadPathPrefix
+        ? `${uploadPathPrefix}/${conversationId}/${crypto.randomUUID()}.${ext}`
+        : `${conversationId}/${crypto.randomUUID()}.${ext}`
       const { error } = await supabase.storage.from(CHAT_ATTACHMENTS_BUCKET).upload(path, file, {
         cacheControl: "3600",
         upsert: false,
@@ -85,7 +93,7 @@ export function MessageInput({
       if (error) return null
       return { path, name: file.name }
     },
-    [supabase, conversationId]
+    [supabase, conversationId, uploadPathPrefix]
   )
 
   const sendWithFile = React.useCallback(
@@ -96,7 +104,7 @@ export function MessageInput({
     ) => {
       if (!file || sending) return
       setSending(true)
-      const wasPriority = priority
+      const wasPriority = showPriority && priority
       try {
         const uploaded = await uploadFile(file)
         if (uploaded) {
@@ -113,14 +121,14 @@ export function MessageInput({
         setSending(false)
       }
     },
-    [conversationId, onSend, priority, sending, uploadFile]
+    [conversationId, onSend, priority, sending, showPriority, uploadFile]
   )
 
   const handleSendText = React.useCallback(async () => {
     const trimmed = text.trim()
     if (!trimmed || sending) return
     setSending(true)
-    const wasPriority = priority
+    const wasPriority = showPriority && priority
     try {
       await onSend(conversationId, {
         content: trimmed,
@@ -132,7 +140,7 @@ export function MessageInput({
     } finally {
       setSending(false)
     }
-  }, [conversationId, onSend, priority, sending, text])
+  }, [conversationId, onSend, priority, sending, showPriority, text])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -223,30 +231,32 @@ export function MessageInput({
         >
           <IconPaperclip className="size-4" />
         </Button>
-        {/* Desktop: priority checkbox to the right of paperclip, vertically centered */}
-        <div className="hidden items-center gap-2 md:flex shrink-0">
-          <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
-            <Checkbox
-              checked={priority}
-              onCheckedChange={(checked) => setPriority(checked === true)}
-              disabled={disabled}
-              aria-label="Mensagem prioritária"
-            />
-            <span
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if ((e.key === "Enter" || e.key === " ") && !disabled) {
-                  e.preventDefault()
-                  setPriority((p) => !p)
-                }
-              }}
-              onClick={() => !disabled && setPriority((p) => !p)}
-            >
-              Mensagem prioritária
-            </span>
-          </label>
-        </div>
+        {/* Desktop: priority checkbox (hidden when showPriority is false, e.g. group chat) */}
+        {showPriority && (
+          <div className="hidden items-center gap-2 md:flex shrink-0">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+              <Checkbox
+                checked={priority}
+                onCheckedChange={(checked) => setPriority(checked === true)}
+                disabled={disabled}
+                aria-label="Mensagem prioritária"
+              />
+              <span
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && !disabled) {
+                    e.preventDefault()
+                    setPriority((p) => !p)
+                  }
+                }}
+                onClick={() => !disabled && setPriority((p) => !p)}
+              >
+                Mensagem prioritária
+              </span>
+            </label>
+          </div>
+        )}
 
         {recording ? (
           <div className="flex min-h-[40px] flex-1 items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-2 py-1.5">
@@ -323,37 +333,39 @@ export function MessageInput({
         )}
       </div>
 
-      {/* Mobile: priority checkbox below the bar; desktop hint when priority */}
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
-        <div className="flex md:hidden items-center gap-2 px-1">
-          <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
-            <Checkbox
-              checked={priority}
-              onCheckedChange={(checked) => setPriority(checked === true)}
-              disabled={disabled}
-              aria-label="Mensagem prioritária"
-            />
-            <span
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if ((e.key === "Enter" || e.key === " ") && !disabled) {
-                  e.preventDefault()
-                  setPriority((p) => !p)
-                }
-              }}
-              onClick={() => !disabled && setPriority((p) => !p)}
-            >
-              Mensagem prioritária
+      {/* Mobile: priority checkbox below the bar; desktop hint when priority (only when showPriority) */}
+      {showPriority && (
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+          <div className="flex md:hidden items-center gap-2 px-1">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+              <Checkbox
+                checked={priority}
+                onCheckedChange={(checked) => setPriority(checked === true)}
+                disabled={disabled}
+                aria-label="Mensagem prioritária"
+              />
+              <span
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && !disabled) {
+                    e.preventDefault()
+                    setPriority((p) => !p)
+                  }
+                }}
+                onClick={() => !disabled && setPriority((p) => !p)}
+              >
+                Mensagem prioritária
+              </span>
+            </label>
+          </div>
+          {priority && (
+            <span className="px-1 text-xs text-amber-600 dark:text-amber-400 md:ml-0">
+              ⚠ Aparecerá no centro da tela do destinatário
             </span>
-          </label>
+          )}
         </div>
-        {priority && (
-          <span className="px-1 text-xs text-amber-600 dark:text-amber-400 md:ml-0">
-            ⚠ Aparecerá no centro da tela do destinatário
-          </span>
-        )}
-      </div>
+      )}
     </div>
   )
 }

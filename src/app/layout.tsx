@@ -9,7 +9,10 @@ import { QuickCreateProvider } from "@/contexts/quick-create-context";
 import { AnnouncementPopupModal } from "@/components/announcement-popup-modal";
 import { ChatPriorityNotification } from "@/components/chat-priority-notification";
 import { ChatProvider } from "@/contexts/chat-context";
+import { GroupChatProvider } from "@/contexts/group-chat-context";
 import { TaskProvider } from "@/contexts/task-context";
+import { IdeasProvider } from "@/contexts/ideas-context";
+import { NotificationMuteProvider } from "@/contexts/notification-mute-context";
 import { InactivityHandler } from "@/components/inactivity-handler";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -44,11 +47,14 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AuthProvider>
+          <NotificationMuteProvider>
           <NotificationProvider>
             <PresenceProvider>
             <AnnouncementProvider>
             <ChatProvider>
+            <GroupChatProvider>
             <TaskProvider>
+            <IdeasProvider>
             <FCMProvider>
             <QuickCreateProvider>
             <InactivityHandler />
@@ -61,12 +67,15 @@ export default function RootLayout({
             </TooltipProvider>
             </QuickCreateProvider>
             </FCMProvider>
+            </IdeasProvider>
             </TaskProvider>
+            </GroupChatProvider>
             </ChatProvider>
             </AnnouncementProvider>
             </PresenceProvider>
           </NotificationProvider>
-        </AuthProvider>
+          </NotificationMuteProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

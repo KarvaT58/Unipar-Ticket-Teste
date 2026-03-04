@@ -11,6 +11,7 @@ export type Profile = {
   department: string
   role: string
   avatar_url?: string | null
+  user_status?: string | null
 }
 
 type AuthContextType = {
@@ -31,13 +32,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = React.useCallback(
     async (userId: string) => {
       if (!supabase) return
-      const { data } = await supabase
+      const { data: base } = await supabase
         .from("profiles")
         .select("id, name, email, department, role, avatar_url")
         .eq("id", userId)
         .single()
-      if (data) setProfile(data as Profile)
-      else setProfile(null)
+      if (!base) {
+        setProfile(null)
+        return
+      }
+      const { data: extra } = await supabase
+        .from("profiles")
+        .select("user_status")
+        .eq("id", userId)
+        .single()
+      setProfile({
+        ...base,
+        user_status: extra?.user_status ?? null,
+      } as Profile)
     },
     [supabase]
   )
@@ -62,6 +74,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => subscription.unsubscribe()
   }, [supabase, fetchProfile])
+
+  React.useEffect(() => {
+    if (!supabase || !profile?.id) return
+    const channel = supabase
+      .channel("profile-status-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${profile.id}`,
+        },
+        (payload) => {
+          const next = payload.new as { user_status?: string | null }
+          if (next && "user_status" in next) {
+            setProfile((prev) => (prev ? { ...prev, user_status: next.user_status ?? null } : null))
+          }
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase, profile?.id])
 
   const signOut = React.useCallback(async () => {
     if (supabase) await supabase.auth.signOut()
