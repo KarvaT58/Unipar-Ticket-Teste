@@ -41,7 +41,7 @@ export function DashboardWelcome() {
       toast.error("Erro ao atualizar o status.")
       return
     }
-    setProfile((prev) => (prev ? { ...prev, user_status: status ?? undefined } : null))
+    setProfile({ ...profile, user_status: status ?? undefined })
     toast.success("Status atualizado.")
   }
 
