@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronsLeft,
+  IconChevronsRight,
+} from "@tabler/icons-react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
 import { SECTORS } from "@/lib/atendimento/sectors"
@@ -32,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,6 +60,7 @@ const ACCEPTED_FILE_TYPES =
 const TITLE_MAX_LENGTH = 60
 const DESCRIPTION_MAX_LENGTH = 700
 const UPLOAD_LIST_SCROLL_AFTER = 5
+const PAGE_SIZES = [10, 20, 30, 50]
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", {
@@ -87,6 +94,8 @@ export function IniciarAtendimentoTab() {
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
   const [ticketToDelete, setTicketToDelete] = useState<Ticket | null>(null)
   const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
+  const [pageIndex, setPageIndex] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
 
   const fetchMyTickets = useCallback(() => {
     if (!supabase || !profile) return
@@ -102,6 +111,10 @@ export function IniciarAtendimentoTab() {
   useEffect(() => {
     fetchMyTickets()
   }, [fetchMyTickets])
+
+  useEffect(() => {
+    setPageIndex(0)
+  }, [filter.search, filter.dateFrom, filter.dateTo])
 
   useEffect(() => {
     if (!supabase || myTickets.length === 0) {
@@ -200,6 +213,10 @@ export function IniciarAtendimentoTab() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!supabase || !profile) return
+    if (!sector?.trim()) {
+      setError("Selecione o setor destino antes de abrir o chamado.")
+      return
+    }
     setError(null)
     setLoading(true)
     const { data: inserted, error: insertError } = await supabase
@@ -304,8 +321,8 @@ export function IniciarAtendimentoTab() {
                   </p>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Setor destino</Label>
-                  <Select value={sector} onValueChange={setSector} required>
+                  <Label>Setor destino <span className="text-destructive">*</span></Label>
+                  <Select value={sector} onValueChange={setSector}>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o setor" />
                     </SelectTrigger>
@@ -418,83 +435,175 @@ export function IniciarAtendimentoTab() {
         <p className="text-muted-foreground">Você ainda não abriu nenhum chamado.</p>
       ) : (
         <>
-          <div className="grid gap-2">
-            {(() => {
-              const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
-              return filtered.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">
-                  Nenhum chamado encontrado para os filtros.
-                </p>
-              ) : (
-                filtered.map((t) => (
-            <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-              <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4">
-                <div className="flex items-center justify-between gap-2 min-h-0">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold truncate">
-                      {t.title}
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {formatDate(t.created_at)}
-                    </p>
+          <div className="overflow-hidden rounded-lg border">
+            <div className="p-2">
+              {(() => {
+                const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
+                const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+                const currentPage = Math.min(pageIndex, pageCount - 1)
+                const start = currentPage * pageSize
+                const pageTickets = filtered.slice(start, start + pageSize)
+                if (filtered.length === 0) {
+                  return (
+                    <div className="flex h-48 items-center justify-center text-muted-foreground">
+                      Nenhum chamado encontrado para os filtros.
+                    </div>
+                  )
+                }
+                return (
+                  <div className="grid gap-2">
+                    {pageTickets.map((t) => (
+                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
+                        <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none">
+                          <div className="flex items-center justify-between gap-2 min-h-0">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm font-semibold truncate">{t.title}</h3>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {formatDate(t.created_at)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                              <Badge
+                                variant="secondary"
+                                className={cn(
+                                  "text-xs",
+                                  t.status === "queue" && "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                                  t.status === "in_progress" && "border-blue-500/50 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+                                  t.status === "closed" && "text-muted-foreground"
+                                )}
+                              >
+                                {t.status === "queue"
+                                  ? "Na fila"
+                                  : t.status === "in_progress"
+                                    ? "Em atendimento"
+                                    : "Encerrado"}
+                              </Badge>
+                              {t.status === "queue" && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <IconDotsVertical className="size-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                    <DropdownMenuItem onClick={(e) => { e.preventDefault(); openEdit(t) }}>
+                                      <IconPencil className="size-4" />
+                                      Editar
+                                    </DropdownMenuItem>
+                                    {canDeleteTicket(t) && (
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={(e) => {
+                                          e.preventDefault()
+                                          setTicketToDelete(t)
+                                        }}
+                                        disabled={deleteLoading === t.id}
+                                      >
+                                        <IconTrash className="size-4" />
+                                        {deleteLoading === t.id ? "Excluindo…" : "Excluir"}
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      </Link>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        "text-xs",
-                        t.status === "queue" && "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-                        t.status === "in_progress" && "border-blue-500/50 bg-blue-500/10 text-blue-700 dark:text-blue-400",
-                        t.status === "closed" && "text-muted-foreground"
-                      )}
+                )
+              })()}
+            </div>
+          </div>
+          {myTickets.length > 0 && (() => {
+            const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
+            if (filtered.length === 0) return null
+            const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+            const currentPage = Math.min(pageIndex, pageCount - 1)
+            return (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2 px-1">
+                <div className="text-sm text-muted-foreground">
+                  {filtered.length} chamado(s)
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="hidden items-center gap-2 lg:flex">
+                    <Label htmlFor="rows-per-page-iniciados" className="text-sm font-medium">
+                      Por página
+                    </Label>
+                    <Select
+                      value={`${pageSize}`}
+                      onValueChange={(v) => {
+                        setPageSize(Number(v))
+                        setPageIndex(0)
+                      }}
                     >
-                      {t.status === "queue"
-                        ? "Na fila"
-                        : t.status === "in_progress"
-                          ? "Em atendimento"
-                          : "Encerrado"}
-                    </Badge>
-                    {t.status === "queue" && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <IconDotsVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenuItem onClick={(e) => { e.preventDefault(); openEdit(t) }}>
-                            <IconPencil className="size-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          {canDeleteTicket(t) && (
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                setTicketToDelete(t)
-                              }}
-                              disabled={deleteLoading === t.id}
-                            >
-                              <IconTrash className="size-4" />
-                              {deleteLoading === t.id ? "Excluindo…" : "Excluir"}
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                      <SelectTrigger size="sm" className="w-20" id="rows-per-page-iniciados">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent side="top">
+                        {PAGE_SIZES.map((size) => (
+                          <SelectItem key={size} value={`${size}`}>
+                            {size}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="text-sm font-medium">
+                    Página {currentPage + 1} de {pageCount}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPageIndex(0)}
+                      disabled={currentPage <= 0}
+                      aria-label="Primeira página"
+                    >
+                      <IconChevronsLeft className="size-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+                      disabled={currentPage <= 0}
+                      aria-label="Página anterior"
+                    >
+                      <IconChevronLeft className="size-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPageIndex((i) => Math.min(pageCount - 1, i + 1))}
+                      disabled={currentPage >= pageCount - 1}
+                      aria-label="Próxima página"
+                    >
+                      <IconChevronRight className="size-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPageIndex(pageCount - 1)}
+                      disabled={currentPage >= pageCount - 1}
+                      aria-label="Última página"
+                    >
+                      <IconChevronsRight className="size-4" />
+                    </Button>
                   </div>
                 </div>
-              </Card>
-            </Link>
-                ))
-              )
-            })()}
-          </div>
+              </div>
+            )
+          })()}
         </>
       )}
 

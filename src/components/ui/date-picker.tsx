@@ -4,6 +4,7 @@ import * as React from "react"
 import { format, parse, isValid } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { IconCalendar } from "@tabler/icons-react"
+import type { Matcher } from "react-day-picker"
 import { Calendar } from "@/components/ui/calendar"
 import {
   Popover,
@@ -35,6 +36,10 @@ type DatePickerProps = {
   id?: string
   "aria-label"?: string
   disabled?: boolean
+  /** Disable specific dates in the calendar (e.g. { before: new Date() } for no past dates) */
+  disabledDates?: Matcher
+  /** When true, only the calendar icon is shown (no text/placeholder) */
+  iconOnly?: boolean
 }
 
 export function DatePicker({
@@ -45,6 +50,8 @@ export function DatePicker({
   id,
   "aria-label": ariaLabel,
   disabled,
+  disabledDates,
+  iconOnly = false,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
   const date = toDate(value)
@@ -66,6 +73,45 @@ export function DatePicker({
     setOpen(false)
   }
 
+  if (iconOnly) {
+    return (
+      <div className={cn("flex items-center gap-2", className)}>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              id={id}
+              variant="outline"
+              size="icon"
+              disabled={disabled}
+              aria-label={ariaLabel ?? "Abrir calendário"}
+              className="h-9 w-9 shrink-0 rounded-md"
+            >
+              <IconCalendar className="size-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={date}
+              onSelect={handleSelect}
+              locale={ptBR}
+              initialFocus
+              disabled={disabledDates}
+            />
+            <div className="flex items-center justify-between gap-2 border-t p-2">
+              <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
+                Limpar
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={handleToday}>
+                Hoje
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+    )
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -75,7 +121,7 @@ export function DatePicker({
           disabled={disabled}
           aria-label={ariaLabel}
           className={cn(
-            "h-9 w-[130px] justify-start text-left font-normal",
+            "h-9 w-full min-w-[180px] justify-start text-left font-normal",
             !displayStr && "text-muted-foreground",
             className
           )}
@@ -91,6 +137,7 @@ export function DatePicker({
           onSelect={handleSelect}
           locale={ptBR}
           initialFocus
+          disabled={disabledDates}
         />
         <div className="flex items-center justify-between gap-2 border-t p-2">
           <Button type="button" variant="ghost" size="sm" onClick={handleClear}>

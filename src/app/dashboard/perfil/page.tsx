@@ -27,24 +27,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { USER_STATUS_OPTIONS } from "@/lib/user-status"
 import { IconUpload, IconTrash, IconUserCircle, IconVolume, IconVolumeOff } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-
-const USER_STATUS_OPTIONS = [
-  { value: "__none__", label: "Não definido" },
-  { value: "online", label: "Online" },
-  { value: "offline", label: "Offline" },
-  { value: "ferias", label: "Férias" },
-  { value: "intervalo", label: "Intervalo" },
-  { value: "almoco", label: "Almoço" },
-  { value: "fim_de_semana", label: "Fim de semana" },
-  { value: "feriado", label: "Feriado" },
-  { value: "ocupado", label: "Ocupado" },
-  { value: "reuniao", label: "Reunião" },
-  { value: "home_office", label: "Home office" },
-  { value: "ausente", label: "Ausente" },
-] as const
 
 const ACCEPTED_IMAGE_TYPES = "image/jpeg,image/png,image/gif,image/webp"
 const MAX_SIZE_MB = 2
@@ -164,7 +150,7 @@ export default function PerfilPage() {
       toast.error("Erro ao atualizar o status.")
       return
     }
-    setProfile({ ...profile, user_status: status ?? undefined })
+    setProfile((prev) => (prev ? { ...prev, user_status: status ?? undefined } : null))
     toast.success("Status atualizado.")
   }
 

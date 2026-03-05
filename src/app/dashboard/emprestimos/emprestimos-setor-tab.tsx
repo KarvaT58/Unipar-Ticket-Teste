@@ -24,12 +24,15 @@ function getLoanStatus(loan: Loan): "active" | "overdue" | "returned" {
   return loan.return_date <= today ? "overdue" : "active"
 }
 
-type LoanWithBorrowerName = Loan & { borrower_name: string | null }
+type LoanWithNames = Loan & {
+  borrower_name: string | null
+  lender_name: string | null
+}
 
 export function EmprestimosSetorTab() {
   const { profile } = useAuth()
   const supabase = createClient()
-  const [loans, setLoans] = useState<LoanWithBorrowerName[]>([])
+  const [loans, setLoans] = useState<LoanWithNames[]>([])
   const [attachmentsByLoanId, setAttachmentsByLoanId] = useState<
     Record<string, LoanAttachment[]>
   >({})
@@ -49,10 +52,12 @@ export function EmprestimosSetorTab() {
           return
         }
         const borrowerIds = [...new Set(list.map((l) => l.borrower_id))]
+        const lenderIds = [...new Set(list.map((l) => l.lender_id).filter(Boolean))] as string[]
+        const allIds = [...new Set([...borrowerIds, ...lenderIds])]
         supabase
           .from("profiles")
           .select("id, name")
-          .in("id", borrowerIds)
+          .in("id", allIds)
           .then(({ data: profiles }) => {
             const nameById: Record<string, string | null> = {}
             ;(profiles ?? []).forEach((p: { id: string; name: string | null }) => {
@@ -62,6 +67,7 @@ export function EmprestimosSetorTab() {
               list.map((l) => ({
                 ...l,
                 borrower_name: nameById[l.borrower_id] ?? null,
+                lender_name: l.lender_id ? nameById[l.lender_id] ?? null : null,
               }))
             )
           })
@@ -147,7 +153,9 @@ export function EmprestimosSetorTab() {
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold">{loan.title}</h3>
                     <p className="text-xs text-muted-foreground">
-                      Emprestado por: {loan.borrower_name ?? "—"}
+                      {loan.lender_name
+                        ? `Emprestado por ${loan.lender_name} para ${loan.borrower_name ?? "—"}`
+                        : `Emprestado por: ${loan.borrower_name ?? "—"}`}
                     </p>
                   </div>
                   <Badge

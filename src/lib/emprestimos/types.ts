@@ -1,6 +1,8 @@
 export type Loan = {
   id: string
   sector: string
+  /** User who created the loan (lending the item). Null = legacy borrower-created loan. */
+  lender_id: string | null
   borrower_id: string
   title: string
   description: string | null
@@ -27,4 +29,9 @@ export type LoanWithBorrower = Loan & {
 
 export type LoanWithAttachments = Loan & {
   loan_attachments?: LoanAttachment[]
+}
+
+export type LoanWithNames = Loan & {
+  borrower_name?: string | null
+  lender_name?: string | null
 }

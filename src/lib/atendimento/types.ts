@@ -21,6 +21,10 @@ export type TicketMessage = {
   content: string
   created_at: string
   is_internal_note?: boolean
+  deleted_at?: string | null
+  deleted_by?: string | null
+  edited_at?: string | null
+  edited_by?: string | null
 }
 
 export type MessageAttachment = {

@@ -2,7 +2,7 @@
 
 import { IconSearch } from "@tabler/icons-react"
 import { Input } from "@/components/ui/input"
-import { DatePicker } from "@/components/ui/date-picker"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 
 export type TicketSearchFilter = {
   search: string
@@ -14,15 +14,18 @@ type TicketSearchFilterBarProps = {
   value: TicketSearchFilter
   onChange: (v: TicketSearchFilter) => void
   dateLabel?: string
+  /** Use compact date range (icon buttons + "Até:") instead of full labels */
+  compactDateRange?: boolean
 }
 
 export function TicketSearchFilterBar({
   value,
   onChange,
   dateLabel = "Data",
+  compactDateRange = true,
 }: TicketSearchFilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3 w-full">
       <div className="relative flex-1 min-w-[200px] max-w-sm">
         <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -32,20 +35,14 @@ export function TicketSearchFilterBar({
           className="pl-9"
         />
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-sm text-muted-foreground whitespace-nowrap">{dateLabel} de:</label>
-        <DatePicker
-          value={value.dateFrom}
-          onChange={(dateFrom) => onChange({ ...value, dateFrom })}
-          placeholder="dd/mm/aaaa"
-          className="w-[140px]"
-        />
-        <label className="text-sm text-muted-foreground whitespace-nowrap">até:</label>
-        <DatePicker
-          value={value.dateTo}
-          onChange={(dateTo) => onChange({ ...value, dateTo })}
-          placeholder="dd/mm/aaaa"
-          className="w-[140px]"
+      <div className="flex items-center gap-2">
+        <DateRangePicker
+          dateLabel={dateLabel}
+          dateFrom={value.dateFrom}
+          dateTo={value.dateTo}
+          onDateFromChange={(dateFrom) => onChange({ ...value, dateFrom })}
+          onDateToChange={(dateTo) => onChange({ ...value, dateTo })}
+          compact={compactDateRange}
         />
       </div>
     </div>

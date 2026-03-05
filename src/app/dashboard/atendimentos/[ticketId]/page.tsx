@@ -40,16 +40,30 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { toast } from "sonner"
+import {
   IconArrowLeft,
   IconArrowBack,
   IconArrowRight,
   IconCircleX,
   IconDotsVertical,
+  IconEdit,
   IconFile,
   IconHeadset,
   IconLock,
   IconPaperclip,
   IconRefresh,
+  IconTrash,
+  IconUserCheck,
   IconUsers,
   IconX,
 } from "@tabler/icons-react"
@@ -274,10 +288,12 @@ function MessageBubble({
       {!isOwn && !isOpeningDescription && !isInternalNote && (
         <p className="mb-1 text-xs font-medium text-muted-foreground">{name}</p>
       )}
-      {message.content.trim() ? (
+      {message.deleted_at ? (
+        <p className="italic text-muted-foreground">Mensagem apagada</p>
+      ) : message.content.trim() ? (
         <p className="whitespace-pre-wrap">{message.content}</p>
       ) : null}
-      {attachments.length > 0 && (
+      {!message.deleted_at && attachments.length > 0 && (
         <div className="mt-2 space-y-3">
           {imageAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -333,7 +349,12 @@ function MessageBubble({
           )}
         </div>
       )}
-      <p className="mt-1.5 text-xs opacity-80">{formatDate(message.created_at)}</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-xs opacity-80">
+        <span>{formatDate(message.created_at)}</span>
+        {message.edited_at && (
+          <span className="italic text-muted-foreground">editada</span>
+        )}
+      </div>
     </div>
   )
 }
@@ -366,6 +387,12 @@ export default function AtendimentoTicketPage() {
   const [closerName, setCloserName] = useState<string | null>(null)
   const [isInternalNote, setIsInternalNote] = useState(false)
   const [reopenLoading, setReopenLoading] = useState(false)
+  const [pegarLoading, setPegarLoading] = useState(false)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState("")
+  const [deleteConfirmMessageId, setDeleteConfirmMessageId] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
 
   const fetchTicket = useCallback(() => {
     if (!supabase || !ticketId) return
@@ -461,31 +488,41 @@ export default function AtendimentoTicketPage() {
   }, [messages])
 
   async function sendMessage() {
-    if (!supabase || !profile || !ticketId) return
+    if (!supabase || !ticketId) return
     const hasText = newMessage.trim().length > 0
     const hasFiles = files.length > 0
     if (!hasText && !hasFiles) return
 
     setSending(true)
-
-    const canSendInternalNote = ticket && profile.department === ticket.target_sector
-    const { data: insertedMsg, error: msgError } = await supabase
-      .from("ticket_messages")
-      .insert({
-        ticket_id: ticketId,
-        user_id: profile.id,
-        content: hasText ? newMessage.trim() : " ",
-        is_internal_note: canSendInternalNote && isInternalNote,
-      })
-      .select("id")
-      .single()
-
-    if (msgError || !insertedMsg) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.id) {
       setSending(false)
+      toast.error("Faça login para enviar mensagens.")
       return
     }
 
-    const messageId = (insertedMsg as { id: string }).id
+    const { data: insertedRows, error: msgError } = await supabase
+      .from("ticket_messages")
+      .insert({
+        ticket_id: ticketId,
+        user_id: user.id,
+        content: hasText ? newMessage.trim() : " ",
+      })
+      .select("id")
+
+    if (msgError) {
+      setSending(false)
+      toast.error("Não foi possível enviar a mensagem. Tente novamente.")
+      console.error("[sendMessage]", msgError)
+      return
+    }
+
+    const messageId = (insertedRows?.[0] as { id: string } | undefined)?.id
+    if (!messageId) {
+      setSending(false)
+      toast.error("Resposta inesperada ao enviar. Recarregue e tente de novo.")
+      return
+    }
 
     if (files.length > 0) {
       for (const file of files) {
@@ -496,7 +533,7 @@ export default function AtendimentoTicketPage() {
         if (!uploadError) {
           await supabase.from("message_attachments").insert({
             message_id: messageId,
-            uploaded_by: profile.id,
+            uploaded_by: user.id,
             file_name: file.name,
             file_path: path,
             file_type: file.type,
@@ -542,6 +579,85 @@ export default function AtendimentoTicketPage() {
       .update({ assigned_to_user_id: null, status: "queue" })
       .eq("id", ticketId)
     router.push("/dashboard/atendimentos")
+  }
+
+  async function handlePegar() {
+    if (!supabase || !ticketId) return
+    setPegarLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.id) {
+      setPegarLoading(false)
+      toast.error("Faça login para pegar o chamado.")
+      return
+    }
+    const payload: Record<string, string> = {
+      assigned_to_user_id: String(user.id),
+      status: "in_progress",
+    }
+    const { error } = await supabase
+      .from("tickets")
+      .update(payload)
+      .eq("id", String(ticketId))
+    setPegarLoading(false)
+    if (error) {
+      toast.error("Não foi possível pegar o chamado. Tente novamente.")
+      return
+    }
+    toast.success("Chamado atribuído a você.")
+    fetchTicket()
+  }
+
+  async function handleDeleteMessage(messageId: string) {
+    if (!supabase) return
+    setDeleteLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.id) {
+      setDeleteLoading(false)
+      setDeleteConfirmMessageId(null)
+      return
+    }
+    const { error } = await supabase
+      .from("ticket_messages")
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id,
+      })
+      .eq("id", messageId)
+      .eq("user_id", user.id)
+    setDeleteLoading(false)
+    setDeleteConfirmMessageId(null)
+    if (error) {
+      toast.error("Não foi possível apagar a mensagem.")
+      return
+    }
+    fetchMessages()
+  }
+
+  async function handleEditMessage(messageId: string, newContent: string) {
+    if (!supabase || !newContent.trim()) return
+    setEditLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.id) {
+      setEditLoading(false)
+      return
+    }
+    const { error } = await supabase
+      .from("ticket_messages")
+      .update({
+        content: newContent.trim(),
+        edited_at: new Date().toISOString(),
+        edited_by: user.id,
+      })
+      .eq("id", messageId)
+      .eq("user_id", user.id)
+    setEditLoading(false)
+    setEditingMessageId(null)
+    setEditDraft("")
+    if (error) {
+      toast.error("Não foi possível editar a mensagem.")
+      return
+    }
+    fetchMessages()
   }
 
   async function handleReabrir() {
@@ -634,6 +750,8 @@ export default function AtendimentoTicketPage() {
   const isAuthor = ticket.created_by === profile.id
   const showActionsMenu =
     (isAuthor || canAttend) && ticket.status !== "closed"
+  const isQueueAndInSector =
+    ticket.status === "queue" && profile.department === ticket.target_sector
   const canSendMessages =
     (ticket.created_by === profile.id || ticket.assigned_to_user_id === profile.id) &&
     ticket.status !== "closed"
@@ -674,6 +792,38 @@ export default function AtendimentoTicketPage() {
               </Button>
               <h1 className="truncate text-xl font-semibold">{ticket.title}</h1>
             </div>
+            {isQueueAndInSector && (
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handlePegar}
+                  disabled={pegarLoading}
+                  className="shrink-0"
+                >
+                  <IconUserCheck className="size-4" />
+                  {pegarLoading ? "…" : "Pegar chamado"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTransferSectorOpen(true)}
+                  className="shrink-0"
+                >
+                  <IconArrowRight className="size-4" />
+                  Transferir para outro setor
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTransferUserOpen(true)}
+                  className="shrink-0"
+                >
+                  <IconUsers className="size-4" />
+                  Transferir para funcionário
+                </Button>
+              </div>
+            )}
             {showActionsMenu && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -737,17 +887,18 @@ export default function AtendimentoTicketPage() {
                 <>
                   {messages.map((m, index) => {
                     const isOpening = index === 0
+                    const isOwn = m.user_id === profile.id
+                    const canAct = isOwn && !m.deleted_at && ticket.status !== "closed"
                     const isHighlighted = highlightedMessageIds.has(m.id)
                     const highlightClass = isHighlighted
                       ? "rounded-xl border-2 border-amber-500/60 bg-amber-500/10 p-3 dark:border-amber-400/50 dark:bg-amber-500/15"
                       : ""
                     const bubble = (
                       <MessageBubble
-                        key={m.id}
                         message={m}
                         attachments={attachmentsByMessageId[m.id] ?? []}
-                        isOwn={m.user_id === profile.id}
-                        profileName={m.user_id === profile.id ? profile.name : undefined}
+                        isOwn={isOwn}
+                        profileName={isOwn ? profile.name : undefined}
                         supabase={supabase!}
                         isInternalNote={!!m.is_internal_note}
                       />
@@ -768,23 +919,87 @@ export default function AtendimentoTicketPage() {
                           <MessageBubble
                             message={m}
                             attachments={attachmentsByMessageId[m.id] ?? []}
-                            isOwn={m.user_id === profile.id}
-                            profileName={m.user_id === profile.id ? profile.name : undefined}
+                            isOwn={isOwn}
+                            profileName={isOwn ? profile.name : undefined}
                             supabase={supabase!}
                             isOpeningDescription
                           />
                         </div>
                       )
                     }
+                    const messageContent = (
+                      <div key={m.id} className="space-y-2">
+                        <div className={isOwn ? "flex flex-row-reverse items-start gap-1" : ""}>
+                          {bubble}
+                          {canAct && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Ações da mensagem">
+                                  <IconDotsVertical className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align={isOwn ? "start" : "end"}>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setEditingMessageId(m.id)
+                                    setEditDraft(m.content)
+                                  }}
+                                >
+                                  <IconEdit className="size-4" />
+                                  Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => setDeleteConfirmMessageId(m.id)}
+                                >
+                                  <IconTrash className="size-4" />
+                                  Apagar
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                        {editingMessageId === m.id && (
+                          <div className={isOwn ? "ml-auto w-full max-w-[85%] sm:max-w-[320px]" : "w-full max-w-[85%] sm:max-w-[320px]"}>
+                            <Textarea
+                              value={editDraft}
+                              onChange={(e) => setEditDraft(e.target.value)}
+                              rows={3}
+                              className="mb-2"
+                              placeholder="Editar mensagem..."
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                disabled={editLoading || !editDraft.trim()}
+                                onClick={() => handleEditMessage(m.id, editDraft)}
+                              >
+                                {editLoading ? "…" : "Salvar"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingMessageId(null)
+                                  setEditDraft("")
+                                }}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
                     return isHighlighted ? (
                       <div key={m.id} className={highlightClass}>
                         <p className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                           Nova mensagem
                         </p>
-                        {bubble}
+                        {messageContent}
                       </div>
                     ) : (
-                      bubble
+                      messageContent
                     )
                   })}
                   {ticket.status === "closed" && (
@@ -923,6 +1138,27 @@ export default function AtendimentoTicketPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirmMessageId} onOpenChange={(open) => !open && setDeleteConfirmMessageId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apagar mensagem?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A mensagem será marcada como apagada e os dois lados verão &quot;Mensagem apagada&quot;. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteConfirmMessageId && handleDeleteMessage(deleteConfirmMessageId)}
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? "…" : "Apagar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={transferUserOpen} onOpenChange={setTransferUserOpen}>
         <DialogContent>

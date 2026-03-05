@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
-import { DatePicker } from "@/components/ui/date-picker"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { usePresence } from "@/contexts/presence-context"
 import { useChat } from "@/contexts/chat-context"
 import { useAuth } from "@/contexts/auth-context"
@@ -116,7 +116,17 @@ export function EquipeTable() {
     }
   }, [startConversation, router, startingWith])
 
-  const filteredMembers = members.filter((m) => {
+  /** Current user first, then rest ordered by name (from API). Realtime updates keep this order. */
+  const membersWithMeFirst = useMemo(() => {
+    if (!profile?.id || members.length === 0) return members
+    const meIndex = members.findIndex((m) => m.id === profile.id)
+    if (meIndex <= 0) return members
+    const me = members[meIndex]
+    const rest = [...members.slice(0, meIndex), ...members.slice(meIndex + 1)]
+    return [me, ...rest]
+  }, [profile?.id, members])
+
+  const filteredMembers = membersWithMeFirst.filter((m) => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return true
     return (
@@ -202,11 +212,21 @@ export function EquipeTable() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
         (payload) => {
-          const row = payload.new as { id: string; user_status?: string | null }
+          const row = payload.new as Partial<TeamMember> & { id: string }
           if (!row?.id) return
           setMembers((prev) =>
             prev.map((m) =>
-              m.id === row.id ? { ...m, user_status: row.user_status ?? null } : m
+              m.id === row.id
+                ? {
+                    ...m,
+                    name: row.name ?? m.name,
+                    email: row.email ?? m.email,
+                    department: row.department ?? m.department,
+                    role: row.role ?? m.role,
+                    avatar_url: row.avatar_url !== undefined ? row.avatar_url : m.avatar_url,
+                    user_status: row.user_status !== undefined ? row.user_status : m.user_status,
+                  }
+                : m
             )
           )
         }
@@ -268,23 +288,6 @@ export function EquipeTable() {
             </TabsTrigger>
           </TabsList>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {(activeTab === "em-atendimentos" || activeTab === "historico") && (
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={dateFrom}
-                  onChange={setDateFrom}
-                  placeholder="dd/mm/aaaa"
-                  aria-label="Data inicial"
-                />
-                <span className="text-muted-foreground">até</span>
-                <DatePicker
-                  value={dateTo}
-                  onChange={setDateTo}
-                  placeholder="dd/mm/aaaa"
-                  aria-label="Data final"
-                />
-              </div>
-            )}
             <div className="relative w-full sm:w-72">
               <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -299,6 +302,16 @@ export function EquipeTable() {
                 aria-label={activeTab === "equipe" ? "Buscar por nome ou e-mail" : "Buscar chamado"}
               />
             </div>
+            {(activeTab === "em-atendimentos" || activeTab === "historico") && (
+              <DateRangePicker
+                dateLabel={activeTab === "historico" ? "Data de encerramento" : "Data de abertura"}
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                onDateFromChange={setDateFrom}
+                onDateToChange={setDateTo}
+                compact
+              />
+            )}
           </div>
         </div>
 
@@ -398,7 +411,7 @@ export function EquipeTable() {
               )}
             </div>
             {!loading && members.length > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2 px-1">
                 <div className="text-sm text-muted-foreground">
                   {filteredMembers.length === members.length
                     ? `${members.length} usuário(s)`
@@ -484,32 +497,132 @@ export function EquipeTable() {
             {!profile ? (
               <p className="text-muted-foreground py-6">Faça login para ver seus atendimentos.</p>
             ) : (
-              <div className="space-y-4">
-                {filteredMyTickets.length === 0 ? (
-                  <p className="text-muted-foreground py-6">
-                    {myTickets.length === 0
-                      ? "Nenhum chamado em atendimento."
-                      : "Nenhum chamado encontrado para a busca ou filtro de data."}
-                  </p>
-                ) : (
-                  <div className="grid gap-2">
-                    {filteredMyTickets.map((t) => (
-                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-                        <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4">
-                          <div className="flex items-center justify-between gap-2 min-h-0">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-sm font-semibold truncate">{t.title}</h3>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {formatDate(t.created_at)}
-                              </p>
+              <>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Chamados em andamento atribuídos a você.
+                </p>
+                <div className="overflow-hidden rounded-lg border">
+                  {filteredMyTickets.length === 0 ? (
+                    <div className="flex h-48 items-center justify-center text-muted-foreground px-4">
+                      {myTickets.length === 0
+                        ? "Nenhum chamado em atendimento."
+                        : "Nenhum chamado encontrado para a busca ou filtro de data."}
+                    </div>
+                  ) : (
+                    <div className="divide-y p-2">
+                      {(() => {
+                        const pageCountAtend = Math.max(1, Math.ceil(filteredMyTickets.length / pageSize))
+                        const currentPageAtend = Math.min(pageIndex, pageCountAtend - 1)
+                        const startAtend = currentPageAtend * pageSize
+                        const pageTicketsAtend = filteredMyTickets.slice(startAtend, startAtend + pageSize)
+                        return pageTicketsAtend.map((t) => (
+                          <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
+                            <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none rounded-md">
+                              <div className="flex items-center justify-between gap-2 min-h-0">
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="text-sm font-semibold truncate">{t.title}</h3>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {formatDate(t.created_at)}
+                                  </p>
+                                </div>
+                              </div>
+                            </Card>
+                          </Link>
+                        ))
+                      })()}
+                    </div>
+                  )}
+                </div>
+                {profile && filteredMyTickets.length > 0 && (
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="text-sm text-muted-foreground">
+                      {filteredMyTickets.length === myTickets.length
+                        ? `${myTickets.length} atendimento(s)`
+                        : `${filteredMyTickets.length} de ${myTickets.length} atendimento(s)`}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="hidden items-center gap-2 lg:flex">
+                        <Label htmlFor="rows-per-page-atend" className="text-sm font-medium">
+                          Por página
+                        </Label>
+                        <Select
+                          value={`${pageSize}`}
+                          onValueChange={(v) => {
+                            setPageSize(Number(v))
+                            setPageIndex(0)
+                          }}
+                        >
+                          <SelectTrigger size="sm" className="w-20" id="rows-per-page-atend">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent side="top">
+                            {PAGE_SIZES.map((size) => (
+                              <SelectItem key={size} value={`${size}`}>
+                                {size}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(() => {
+                        const pageCountAtend = Math.max(1, Math.ceil(filteredMyTickets.length / pageSize))
+                        const currentPageAtend = Math.min(pageIndex, pageCountAtend - 1)
+                        return (
+                          <>
+                            <div className="text-sm font-medium">
+                              Página {currentPageAtend + 1} de {pageCountAtend}
                             </div>
-                          </div>
-                        </Card>
-                      </Link>
-                    ))}
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setPageIndex(0)}
+                                disabled={currentPageAtend <= 0}
+                                aria-label="Primeira página"
+                              >
+                                <IconChevronsLeft className="size-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+                                disabled={currentPageAtend <= 0}
+                                aria-label="Página anterior"
+                              >
+                                <IconChevronLeft className="size-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() =>
+                                  setPageIndex((i) => Math.min(pageCountAtend - 1, i + 1))
+                                }
+                                disabled={currentPageAtend >= pageCountAtend - 1}
+                                aria-label="Próxima página"
+                              >
+                                <IconChevronRight className="size-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setPageIndex(pageCountAtend - 1)}
+                                disabled={currentPageAtend >= pageCountAtend - 1}
+                                aria-label="Última página"
+                              >
+                                <IconChevronsRight className="size-4" />
+                              </Button>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
                   </div>
                 )}
-              </div>
+              </>
             )}
           </TabsContent>
 
@@ -517,35 +630,132 @@ export function EquipeTable() {
             {!profile ? (
               <p className="text-muted-foreground py-6">Faça login para ver o histórico.</p>
             ) : (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
+              <>
+                <p className="text-sm text-muted-foreground mb-2">
                   Chamados de outros setores que você atendeu e encerrou.
                 </p>
-                {filteredClosedTickets.length === 0 ? (
-                  <p className="text-muted-foreground py-6">
-                    {closedTickets.length === 0
-                      ? "Nenhum atendimento de outro setor encerrado por você."
-                      : "Nenhum chamado encontrado para a busca ou filtro de data."}
-                  </p>
-                ) : (
-                  <div className="grid gap-2">
-                    {filteredClosedTickets.map((t) => (
-                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-                        <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4">
-                          <div className="flex items-center justify-between gap-2 min-h-0">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-sm font-semibold truncate">{t.title}</h3>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {t.closed_at ? formatDate(t.closed_at) : formatDate(t.created_at)}
-                              </p>
+                <div className="overflow-hidden rounded-lg border">
+                  {filteredClosedTickets.length === 0 ? (
+                    <div className="flex h-48 items-center justify-center text-muted-foreground px-4">
+                      {closedTickets.length === 0
+                        ? "Nenhum atendimento de outro setor encerrado por você."
+                        : "Nenhum chamado encontrado para a busca ou filtro de data."}
+                    </div>
+                  ) : (
+                    <div className="divide-y p-2">
+                      {(() => {
+                        const pageCountHist = Math.max(1, Math.ceil(filteredClosedTickets.length / pageSize))
+                        const currentPageHist = Math.min(pageIndex, pageCountHist - 1)
+                        const startHist = currentPageHist * pageSize
+                        const pageTicketsHist = filteredClosedTickets.slice(startHist, startHist + pageSize)
+                        return pageTicketsHist.map((t) => (
+                          <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
+                            <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none rounded-md">
+                              <div className="flex items-center justify-between gap-2 min-h-0">
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="text-sm font-semibold truncate">{t.title}</h3>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {t.closed_at ? formatDate(t.closed_at) : formatDate(t.created_at)}
+                                  </p>
+                                </div>
+                              </div>
+                            </Card>
+                          </Link>
+                        ))
+                      })()}
+                    </div>
+                  )}
+                </div>
+                {profile && filteredClosedTickets.length > 0 && (
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="text-sm text-muted-foreground">
+                      {filteredClosedTickets.length === closedTickets.length
+                        ? `${closedTickets.length} chamado(s)`
+                        : `${filteredClosedTickets.length} de ${closedTickets.length} chamado(s)`}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="hidden items-center gap-2 lg:flex">
+                        <Label htmlFor="rows-per-page-hist" className="text-sm font-medium">
+                          Por página
+                        </Label>
+                        <Select
+                          value={`${pageSize}`}
+                          onValueChange={(v) => {
+                            setPageSize(Number(v))
+                            setPageIndex(0)
+                          }}
+                        >
+                          <SelectTrigger size="sm" className="w-20" id="rows-per-page-hist">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent side="top">
+                            {PAGE_SIZES.map((size) => (
+                              <SelectItem key={size} value={`${size}`}>
+                                {size}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(() => {
+                        const pageCountHist = Math.max(1, Math.ceil(filteredClosedTickets.length / pageSize))
+                        const currentPageHist = Math.min(pageIndex, pageCountHist - 1)
+                        return (
+                          <>
+                            <div className="text-sm font-medium">
+                              Página {currentPageHist + 1} de {pageCountHist}
                             </div>
-                          </div>
-                        </Card>
-                      </Link>
-                    ))}
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setPageIndex(0)}
+                                disabled={currentPageHist <= 0}
+                                aria-label="Primeira página"
+                              >
+                                <IconChevronsLeft className="size-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+                                disabled={currentPageHist <= 0}
+                                aria-label="Página anterior"
+                              >
+                                <IconChevronLeft className="size-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() =>
+                                  setPageIndex((i) => Math.min(pageCountHist - 1, i + 1))
+                                }
+                                disabled={currentPageHist >= pageCountHist - 1}
+                                aria-label="Próxima página"
+                              >
+                                <IconChevronRight className="size-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setPageIndex(pageCountHist - 1)}
+                                disabled={currentPageHist >= pageCountHist - 1}
+                                aria-label="Última página"
+                              >
+                                <IconChevronsRight className="size-4" />
+                              </Button>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
                   </div>
                 )}
-              </div>
+              </>
             )}
           </TabsContent>
         </div>

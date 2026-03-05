@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!supabase || !profile?.id) return
     const channel = supabase
-      .channel("profile-status-realtime")
+      .channel(`profile-status-realtime-${profile.id}`)
       .on(
         "postgres_changes",
         {
@@ -88,10 +88,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           filter: `id=eq.${profile.id}`,
         },
         (payload) => {
-          const next = payload.new as { user_status?: string | null }
-          if (next && "user_status" in next) {
-            setProfile((prev) => (prev ? { ...prev, user_status: next.user_status ?? null } : null))
-          }
+          const row = payload.new as Record<string, unknown> | undefined
+          if (!row || typeof row.id !== "string") return
+          setProfile((prev) => {
+            if (!prev || prev.id !== row.id) return prev
+            return {
+              ...prev,
+              user_status: (row.user_status as string | null) ?? null,
+            }
+          })
         }
       )
       .subscribe()

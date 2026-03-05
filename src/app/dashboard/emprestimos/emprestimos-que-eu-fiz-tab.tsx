@@ -7,6 +7,8 @@ import type { Loan, LoanAttachment } from "@/lib/emprestimos/types"
 import { getSectorLabel } from "@/lib/atendimento/sectors"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 
 function formatDate(dateStr: string) {
   return new Date(dateStr + "T12:00:00").toLocaleDateString("pt-BR", {
@@ -22,23 +24,47 @@ function getLoanStatus(loan: Loan): "active" | "overdue" | "returned" {
   return loan.return_date <= today ? "overdue" : "active"
 }
 
-export function MeusEmprestimosTab() {
+type LoanWithBorrowerName = Loan & { borrower_name: string | null }
+
+export function EmprestimosQueEuFizTab() {
   const { profile } = useAuth()
   const supabase = createClient()
-  const [loans, setLoans] = useState<Loan[]>([])
+  const [loans, setLoans] = useState<LoanWithBorrowerName[]>([])
   const [attachmentsByLoanId, setAttachmentsByLoanId] = useState<
     Record<string, LoanAttachment[]>
   >({})
+  const [returningId, setReturningId] = useState<string | null>(null)
 
   const fetchLoans = useCallback(() => {
     if (!supabase || !profile) return
     supabase
       .from("loans")
       .select("*")
-      .eq("borrower_id", profile.id)
+      .eq("lender_id", profile.id)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
-        setLoans((data as Loan[]) ?? [])
+        const list = (data as Loan[]) ?? []
+        if (list.length === 0) {
+          setLoans([])
+          return
+        }
+        const borrowerIds = [...new Set(list.map((l) => l.borrower_id))]
+        supabase
+          .from("profiles")
+          .select("id, name")
+          .in("id", borrowerIds)
+          .then(({ data: profiles }) => {
+            const nameById: Record<string, string | null> = {}
+            ;(profiles ?? []).forEach((p: { id: string; name: string | null }) => {
+              nameById[p.id] = p.name ?? null
+            })
+            setLoans(
+              list.map((l) => ({
+                ...l,
+                borrower_name: nameById[l.borrower_id] ?? null,
+              }))
+            )
+          })
       })
   }, [supabase, profile])
 
@@ -67,25 +93,41 @@ export function MeusEmprestimosTab() {
       })
   }, [supabase, loans])
 
+  async function handleMarkReturned(loanId: string) {
+    if (!supabase) return
+    setReturningId(loanId)
+    const { error } = await supabase
+      .from("loans")
+      .update({ returned_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", loanId)
+    setReturningId(null)
+    if (error) {
+      toast.error("Não foi possível marcar como devolvido.")
+      return
+    }
+    toast.success("Marcado como devolvido.")
+    fetchLoans()
+  }
+
   if (!profile) {
     return (
-      <p className="text-muted-foreground">Faça login para ver seus empréstimos.</p>
+      <p className="text-muted-foreground">Faça login para ver os empréstimos que você criou.</p>
     )
   }
 
   if (loans.length === 0) {
     return (
       <p className="text-muted-foreground">
-        Você ainda não tem empréstimos. Quando alguém criar um empréstimo para você, ele aparecerá aqui e você receberá o aviso.
+        Você ainda não criou nenhum empréstimo. Use o botão &quot;Novo empréstimo&quot; para emprestar um item a alguém.
       </p>
     )
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Empréstimos que eu peguei</h2>
+      <h2 className="text-lg font-semibold">Empréstimos que eu fiz</h2>
       <p className="text-sm text-muted-foreground">
-        Itens que outras pessoas emprestaram para você. Estes são os que você precisa devolver.
+        Itens que você emprestou para outras pessoas. Só você, a pessoa e os setores de ambos veem cada empréstimo.
       </p>
       <div className="grid gap-2">
         {loans.map((loan) => {
@@ -98,7 +140,7 @@ export function MeusEmprestimosTab() {
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold">{loan.title}</h3>
                     <p className="text-xs text-muted-foreground">
-                      Setor: {getSectorLabel(loan.sector)}
+                      Emprestado para: {loan.borrower_name ?? "—"}
                     </p>
                   </div>
                   <Badge
@@ -122,10 +164,23 @@ export function MeusEmprestimosTab() {
                     {loan.description}
                   </p>
                 )}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span>Devolução: {formatDate(loan.return_date)}</span>
-                  {attachments.length > 0 && (
-                    <span>{attachments.length} foto(s)</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span>Devolução: {formatDate(loan.return_date)}</span>
+                    {attachments.length > 0 && (
+                      <span>{attachments.length} foto(s)</span>
+                    )}
+                    <span>Setor: {getSectorLabel(loan.sector)}</span>
+                  </div>
+                  {status !== "returned" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleMarkReturned(loan.id)}
+                      disabled={returningId === loan.id}
+                    >
+                      {returningId === loan.id ? "Salvando…" : "Marcar como devolvido"}
+                    </Button>
                   )}
                 </div>
               </div>

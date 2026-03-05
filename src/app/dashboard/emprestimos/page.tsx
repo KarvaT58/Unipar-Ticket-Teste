@@ -24,7 +24,7 @@ export default function EmprestimosPage() {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <PageHeader
             title="Empréstimos"
-            description="Solicite empréstimos por setor e acompanhe devoluções."
+            description="Empreste itens para colegas, acompanhe o que você emprestou e o que pegou emprestado."
             icon={<IconPackage className="size-5" />}
           />
           <div className="flex-1 overflow-auto px-4 pb-6 lg:px-6">
