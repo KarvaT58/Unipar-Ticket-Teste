@@ -15,9 +15,9 @@ export function AtendimentosTabs({ defaultTab }: { defaultTab: string }) {
   const andamentoUnread = atendimentosTabUnread
 
   return (
-    <Tabs defaultValue={defaultTab} className="w-full">
-      <div className="flex w-full justify-center">
-        <TabsList className="h-9 w-fit">
+    <Tabs defaultValue={defaultTab} className="w-full space-y-5">
+      <div className="flex w-full justify-center border-b pb-4">
+        <TabsList className="h-10 w-fit gap-1 bg-muted/50 p-1">
           <TabsTrigger value="iniciados" className="relative">
             Chamados que iniciei
             {iniciadosTabUnread > 0 && (
@@ -44,13 +44,13 @@ export function AtendimentosTabs({ defaultTab }: { defaultTab: string }) {
           </TabsTrigger>
         </TabsList>
       </div>
-      <TabsContent value="iniciados" className="mt-6">
+      <TabsContent value="iniciados" className="mt-4">
         <IniciarAtendimentoTab />
       </TabsContent>
-      <TabsContent value="andamento" className="mt-6">
+      <TabsContent value="andamento" className="mt-4">
         <ChamadosEmAndamentoTab />
       </TabsContent>
-      <TabsContent value="encerrados" className="mt-6">
+      <TabsContent value="encerrados" className="mt-4">
         <EncerradosTab />
       </TabsContent>
     </Tabs>

@@ -34,6 +34,16 @@ function buildFCMPayload(record: WebhookPayload["record"]): { title: string; bod
       return { title: "Novo chamado", body: "Um novo chamado foi aberto na fila.", data }
     case "new_message":
       return { title: "Nova mensagem", body: "Nova mensagem em um chamado.", data }
+    case "ticket_assigned":
+      return { title: "Chamado atribuído", body: "Seu chamado foi pego por um atendente.", data }
+    case "ticket_transferred":
+      return { title: "Chamado transferido", body: "O chamado foi transferido.", data }
+    case "ticket_closed":
+      return { title: "Chamado encerrado", body: "O chamado foi encerrado.", data }
+    case "ticket_overdue_12h":
+      return { title: "Chamado em atraso", body: "Um chamado não foi resolvido em 12 horas.", data }
+    case "ticket_overdue_3d":
+      return { title: "Chamado em atraso crítico", body: "Um chamado está sem resolução há 3 dias.", data }
     case "chat_message":
       return { title: "Nova mensagem no chat", body: "Você recebeu uma nova mensagem no chat interno.", data }
     case "chat_priority_message":

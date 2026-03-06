@@ -88,7 +88,7 @@ export function NavMain({
 }) {
   const quickCreate = useQuickCreate()
   const { anunciosEventosUnread } = useAnnouncements()
-  const { unreadByChatConversationId, totalTicketUnread, filaTabUnread } = useNotifications()
+  const { unreadByChatConversationId, atendimentosPageUnread, filaTabUnread } = useNotifications()
   const { unreadDeadlineCount } = useTasks()
 
   const totalChatUnread = Object.values(unreadByChatConversationId).reduce(
@@ -118,7 +118,7 @@ export function NavMain({
               totalChatUnread={totalChatUnread}
               anunciosEventosUnread={anunciosEventosUnread}
               unreadDeadlineCount={unreadDeadlineCount}
-              atendimentosUnread={totalTicketUnread}
+              atendimentosUnread={atendimentosPageUnread}
               filaUnread={filaTabUnread}
             />
           </SidebarMenu>
@@ -136,7 +136,7 @@ export function NavMain({
                 totalChatUnread={totalChatUnread}
                 anunciosEventosUnread={anunciosEventosUnread}
                 unreadDeadlineCount={unreadDeadlineCount}
-                atendimentosUnread={totalTicketUnread}
+                atendimentosUnread={atendimentosPageUnread}
                 filaUnread={filaTabUnread}
               />
             </SidebarMenu>

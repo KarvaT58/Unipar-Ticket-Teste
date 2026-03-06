@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/tickets/check-overdue",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

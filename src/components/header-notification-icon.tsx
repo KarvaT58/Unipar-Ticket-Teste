@@ -17,11 +17,14 @@ function getNotificationTitle(type: string): string {
   if (type === "new_announcement") return "Novo anúncio"
   if (type === "new_ticket") return "Novo chamado"
   if (type === "new_message") return "Nova mensagem"
+  if (type === "ticket_assigned") return "Chamado atribuído"
   if (type === "ticket_transferred") return "Chamado transferido"
   if (type === "ticket_edited") return "Chamado editado"
   if (type === "ticket_closed") return "Chamado encerrado"
   if (type === "ticket_reopened") return "Chamado reaberto"
   if (type === "ticket_returned_to_queue") return "Chamado devolvido à fila"
+  if (type === "ticket_overdue_12h") return "Chamado em atraso (12h)"
+  if (type === "ticket_overdue_3d") return "Chamado em atraso (3 dias)"
   if (type === "chat_message") return "Nova mensagem no chat"
   if (type === "chat_priority_message") return "Mensagem prioritária"
   if (type === "task_deadline") return "Prazo da tarefa"
@@ -32,17 +35,24 @@ function getNotificationDescription(
   type: string,
   ticketTitle: string,
   announcementTitle: string | null,
-  chatSenderName: string | null
+  chatSenderName: string | null,
+  actorName: string | null
 ): string {
   if (type === "new_announcement")
     return announcementTitle ? `"${announcementTitle}" foi publicado para a equipe.` : "Um novo anúncio foi publicado."
   if (type === "new_ticket") return `O chamado "${ticketTitle}" foi aberto na fila do seu setor.`
   if (type === "new_message") return `Nova mensagem no chamado "${ticketTitle}".`
+  if (type === "ticket_assigned")
+    return actorName
+      ? `O chamado "${ticketTitle}" foi pego por ${actorName}.`
+      : `O chamado "${ticketTitle}" foi pego por um atendente.`
   if (type === "ticket_transferred") return `O chamado "${ticketTitle}" foi transferido para você ou para seu setor.`
   if (type === "ticket_edited") return `O chamado "${ticketTitle}" foi editado pelo autor.`
   if (type === "ticket_closed") return `O chamado "${ticketTitle}" foi encerrado.`
   if (type === "ticket_reopened") return `O chamado "${ticketTitle}" foi reaberto.`
   if (type === "ticket_returned_to_queue") return `O chamado "${ticketTitle}" foi devolvido à fila do seu setor.`
+  if (type === "ticket_overdue_12h") return `O chamado "${ticketTitle}" não foi resolvido em 12 horas.`
+  if (type === "ticket_overdue_3d") return `O chamado "${ticketTitle}" está sem resolução há 3 dias.`
   if (type === "chat_message") return chatSenderName ? `Mensagem de ${chatSenderName} no chat interno.` : "Nova mensagem no chat interno."
   if (type === "chat_priority_message") return chatSenderName ? `Mensagem prioritária de ${chatSenderName}.` : "Mensagem prioritária no chat."
   if (type === "task_deadline") return "Uma tarefa está no prazo ou vencida."
@@ -51,7 +61,7 @@ function getNotificationDescription(
 
 export function HeaderNotificationIcon() {
   const [open, setOpen] = useState(false)
-  const { totalUnread, unreadNotificationItems, markNotificationAsRead } = useNotifications()
+  const { totalUnread, unreadNotificationItems, markTicketAsRead, markNotificationAsRead } = useNotifications()
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -102,9 +112,10 @@ export function HeaderNotificationIcon() {
                   href={href}
                   onClick={() => {
                     setOpen(false)
-                    if (item.type === "new_announcement") void markNotificationAsRead(item.id)
-                    if (item.type === "chat_message" || item.type === "chat_priority_message") void markNotificationAsRead(item.id)
-                    if (item.type === "task_deadline") void markNotificationAsRead(item.id)
+                    if (item.ticket_id) void markTicketAsRead(item.ticket_id)
+                    else if (item.type === "new_announcement") void markNotificationAsRead(item.id)
+                    else if (item.type === "chat_message" || item.type === "chat_priority_message") void markNotificationAsRead(item.id)
+                    else if (item.type === "task_deadline") void markNotificationAsRead(item.id)
                   }}
                 >
                   <div className="flex gap-3 px-3 py-3 hover:bg-muted/50 cursor-pointer transition-colors">
@@ -128,7 +139,7 @@ export function HeaderNotificationIcon() {
                         {getNotificationTitle(item.type)}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                        {getNotificationDescription(item.type, item.ticketTitle, item.announcementTitle, item.chat_sender_name ?? null)}
+                        {getNotificationDescription(item.type, item.ticketTitle, item.announcementTitle, item.chat_sender_name ?? null, item.actor_name ?? null)}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {formatRelativeTime(item.created_at)}

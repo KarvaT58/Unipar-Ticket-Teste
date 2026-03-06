@@ -17,6 +17,7 @@ import { InactivityHandler } from "@/components/inactivity-handler";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { TaskDeadlinePopup } from "@/components/task-deadline-popup";
+import { TicketOverduePopup } from "@/components/ticket-overdue-popup";
 import { FCMProvider } from "@/components/fcm-provider";
 import "./globals.css";
 
@@ -63,6 +64,7 @@ export default function RootLayout({
               <AnnouncementPopupModal />
               <ChatPriorityNotification />
               <TaskDeadlinePopup />
+              <TicketOverduePopup />
               <Toaster position="bottom-right" />
             </TooltipProvider>
             </QuickCreateProvider>

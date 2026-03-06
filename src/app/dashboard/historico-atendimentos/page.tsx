@@ -22,7 +22,8 @@ export default function HistoricoAtendimentosPage() {
         <SiteHeader />
         <div className="flex flex-1 flex-col">
           <PageHeader
-            title="Histórico De Atendimentos"
+            title="Histórico de atendimentos"
+            description="Chamados já encerrados."
             icon={<IconHistory className="size-5" />}
           />
           <div className="flex-1 px-4 pb-6 lg:px-6">

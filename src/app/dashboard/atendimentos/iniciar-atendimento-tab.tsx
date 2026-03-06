@@ -7,12 +7,20 @@ import {
   IconChevronRight,
   IconChevronsLeft,
   IconChevronsRight,
+  IconBuilding,
+  IconCalendar,
+  IconMessageCircle,
+  IconPlus,
+  IconTrash,
+  IconUpload,
+  IconUser,
+  IconX,
 } from "@tabler/icons-react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
-import { SECTORS } from "@/lib/atendimento/sectors"
+import { useNotifications } from "@/contexts/notification-context"
+import { SECTORS, getSectorLabel } from "@/lib/atendimento/sectors"
 import type { Ticket } from "@/lib/atendimento/types"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,12 +30,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -49,8 +51,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { IconPlus, IconUpload, IconX, IconPencil, IconTrash, IconDotsVertical } from "@tabler/icons-react"
-import { TicketSearchFilterBar, filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
+import { IconPencil } from "@tabler/icons-react"
+import { filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -72,8 +74,24 @@ function formatDate(iso: string) {
   })
 }
 
+function formatDateOnly(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+}
+
+function formatTimeOnly(iso: string) {
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 export function IniciarAtendimentoTab() {
   const { profile } = useAuth()
+  const { unreadByTicketId, getNotificationLabelForTicket } = useNotifications()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState("")
@@ -94,6 +112,9 @@ export function IniciarAtendimentoTab() {
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
   const [ticketToDelete, setTicketToDelete] = useState<Ticket | null>(null)
   const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
+  const [statusFilter, setStatusFilter] = useState<string>("")
+  const [sectorFilter, setSectorFilter] = useState<string>("")
+  const [assigneeNames, setAssigneeNames] = useState<Record<string, string>>({})
   const [pageIndex, setPageIndex] = useState(0)
   const [pageSize, setPageSize] = useState(10)
 
@@ -113,8 +134,51 @@ export function IniciarAtendimentoTab() {
   }, [fetchMyTickets])
 
   useEffect(() => {
+    if (!supabase || !profile?.id) return
+    const channel = supabase
+      .channel("tickets-iniciados")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tickets",
+          filter: `created_by=eq.${profile.id}`,
+        },
+        () => fetchMyTickets()
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase, profile?.id, fetchMyTickets])
+
+  useEffect(() => {
     setPageIndex(0)
-  }, [filter.search, filter.dateFrom, filter.dateTo])
+  }, [filter.search, filter.dateFrom, filter.dateTo, statusFilter, sectorFilter])
+
+  useEffect(() => {
+    if (!supabase || myTickets.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    const userIds = [...new Set(myTickets.map((t) => t.assigned_to_user_id).filter(Boolean))] as string[]
+    if (userIds.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", userIds)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data ?? []).forEach((r: { id: string; name: string }) => {
+          map[r.id] = r.name ?? ""
+        })
+        setAssigneeNames(map)
+      })
+  }, [supabase, myTickets])
 
   useEffect(() => {
     if (!supabase || myTickets.length === 0) {
@@ -286,15 +350,30 @@ export function IniciarAtendimentoTab() {
     )
   }
 
+  const filteredBySearchAndDate = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
+  const filteredTickets = filteredBySearchAndDate.filter((t) => {
+    if (statusFilter && t.status !== statusFilter) return false
+    if (sectorFilter && t.target_sector !== sectorFilter) return false
+    return true
+  })
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Meus chamados abertos</h2>
+      {/* Header: title, subtitle, Novo Chamado */}
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            Chamados que eu abri
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Chamados que você criou e pode transferir ou acompanhar
+          </p>
+        </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="w-full shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 sm:w-auto" size="default">
               <IconPlus className="size-4" />
-              Iniciar atendimento
+              Novo Chamado
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -426,110 +505,164 @@ export function IniciarAtendimentoTab() {
         </Dialog>
       </div>
 
-      <TicketSearchFilterBar
-        value={filter}
-        onChange={setFilter}
-        dateLabel="Data de abertura"
-      />
-      {myTickets.length === 0 ? (
-        <p className="text-muted-foreground">Você ainda não abriu nenhum chamado.</p>
+      {/* Filter bar: search, status, setor */}
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-md">
+          <Input
+            placeholder="Buscar por título ou descrição..."
+            value={filter.search}
+            onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
+            className="h-9 bg-background border-muted-foreground/20"
+          />
+        </div>
+        <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="h-9 w-[180px]">
+            <SelectValue placeholder="Todos os Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os Status</SelectItem>
+            <SelectItem value="queue">Na fila</SelectItem>
+            <SelectItem value="in_progress">Em andamento</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sectorFilter || "all"} onValueChange={(v) => setSectorFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="h-9 w-[180px]">
+            <SelectValue placeholder="Todos os Setores" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os Setores</SelectItem>
+            {SECTORS.map((s) => (
+              <SelectItem key={s.value} value={s.value}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {filteredTickets.length === 0 ? (
+        <p className="py-8 text-center text-muted-foreground">
+          {myTickets.length === 0 ? "Você ainda não abriu nenhum chamado." : "Nenhum chamado encontrado para os filtros."}
+        </p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-xl border bg-card/50">
             <div className="p-2">
               {(() => {
-                const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
-                const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+                const pageCount = Math.max(1, Math.ceil(filteredTickets.length / pageSize))
                 const currentPage = Math.min(pageIndex, pageCount - 1)
                 const start = currentPage * pageSize
-                const pageTickets = filtered.slice(start, start + pageSize)
-                if (filtered.length === 0) {
-                  return (
-                    <div className="flex h-48 items-center justify-center text-muted-foreground">
-                      Nenhum chamado encontrado para os filtros.
-                    </div>
-                  )
-                }
+                const pageTickets = filteredTickets.slice(start, start + pageSize)
+                const gridCols = "minmax(110px,140px) minmax(150px,240px) 105px 88px 68px minmax(220px,1fr)"
                 return (
-                  <div className="grid gap-2">
-                    {pageTickets.map((t) => (
-                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-                        <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none">
-                          <div className="flex items-center justify-between gap-2 min-h-0">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-sm font-semibold truncate">{t.title}</h3>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {formatDate(t.created_at)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                              <Badge
-                                variant="secondary"
+                  <div className="grid gap-0">
+                    <div
+                      className="grid gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b border-border bg-muted/30 rounded-t-lg items-center"
+                      style={{ gridTemplateColumns: gridCols }}
+                    >
+                      <span>Aberto por</span>
+                      <span>Título do chamado</span>
+                      <span>Status</span>
+                      <span className="tabular-nums">Data</span>
+                      <span className="tabular-nums">Horário</span>
+                      <span className="text-right">Ações</span>
+                    </div>
+                    {pageTickets.map((t, idx) => {
+                      const statusLabel = t.status === "queue" ? "Aberto" : t.status === "in_progress" ? "Em andamento" : "Encerrado"
+                      const canDelete = canDeleteTicket(t)
+                      const hasUnread = (unreadByTicketId[t.id] ?? 0) > 0
+                      const isLast = idx === pageTickets.length - 1
+                      return (
+                        <Card
+                          key={t.id}
+                          className={cn(
+                            "overflow-hidden transition-colors hover:bg-muted/40 py-2.5 px-4 border-0 border-b border-border/50 shadow-none rounded-none",
+                            idx === 0 && "first:rounded-t-none",
+                            isLast && "rounded-b-lg border-b-0"
+                          )}
+                        >
+                          <div
+                            className="grid gap-3 items-center min-h-0"
+                            style={{ gridTemplateColumns: gridCols }}
+                          >
+                            <span className="text-sm text-foreground truncate min-w-0">
+                              {profile?.name ?? "—"}
+                            </span>
+                            <span className="text-sm font-medium text-foreground truncate min-w-0">
+                              {t.title}
+                            </span>
+                            <span className="flex items-center gap-1.5 shrink-0">
+                              <span
                                 className={cn(
-                                  "text-xs",
-                                  t.status === "queue" && "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-                                  t.status === "in_progress" && "border-blue-500/50 bg-blue-500/10 text-blue-700 dark:text-blue-400",
-                                  t.status === "closed" && "text-muted-foreground"
+                                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0",
+                                  t.status === "queue" &&
+                                    "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+                                  t.status === "in_progress" &&
+                                    "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
                                 )}
                               >
-                                {t.status === "queue"
-                                  ? "Na fila"
-                                  : t.status === "in_progress"
-                                    ? "Em atendimento"
-                                    : "Encerrado"}
-                              </Badge>
+                                {t.status === "queue" && hasUnread && (
+                                  <span className="size-1 rounded-full bg-red-500" aria-hidden />
+                                )}
+                                {statusLabel}
+                              </span>
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                              {formatDateOnly(t.created_at)}
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                              {formatTimeOnly(t.created_at)}
+                            </span>
+                            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 min-w-0">
+                              <Button asChild variant="outline" size="sm" className="h-7 text-xs">
+                                <Link href={`/dashboard/atendimentos/${t.id}`}>
+                                  <IconMessageCircle className="size-3.5 mr-1" />
+                                  Ver conversa
+                                </Link>
+                              </Button>
                               {t.status === "queue" && (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <IconDotsVertical className="size-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                    <DropdownMenuItem onClick={(e) => { e.preventDefault(); openEdit(t) }}>
-                                      <IconPencil className="size-4" />
-                                      Editar
-                                    </DropdownMenuItem>
-                                    {canDeleteTicket(t) && (
-                                      <DropdownMenuItem
-                                        className="text-destructive focus:text-destructive"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          setTicketToDelete(t)
-                                        }}
-                                        disabled={deleteLoading === t.id}
-                                      >
-                                        <IconTrash className="size-4" />
-                                        {deleteLoading === t.id ? "Excluindo…" : "Excluir"}
-                                      </DropdownMenuItem>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => openEdit(t)}
+                                >
+                                  <IconPencil className="size-3.5 mr-1" />
+                                  Editar
+                                </Button>
+                              )}
+                              {canDelete && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  disabled={deleteLoading === t.id}
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    setTicketToDelete(t)
+                                  }}
+                                >
+                                  <IconTrash className="size-3.5 mr-1" />
+                                  {deleteLoading === t.id ? "Excluindo…" : "Apagar"}
+                                </Button>
                               )}
                             </div>
                           </div>
                         </Card>
-                      </Link>
-                    ))}
+                      )
+                    })}
                   </div>
                 )
               })()}
             </div>
           </div>
-          {myTickets.length > 0 && (() => {
-            const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
-            if (filtered.length === 0) return null
-            const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+          {filteredTickets.length > 0 && (() => {
+            const pageCount = Math.max(1, Math.ceil(filteredTickets.length / pageSize))
             const currentPage = Math.min(pageIndex, pageCount - 1)
             return (
               <div className="mt-5 flex flex-wrap items-center justify-between gap-2 px-1">
                 <div className="text-sm text-muted-foreground">
-                  {filtered.length} chamado(s)
+                  {filteredTickets.length} chamado(s)
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="hidden items-center gap-2 lg:flex">

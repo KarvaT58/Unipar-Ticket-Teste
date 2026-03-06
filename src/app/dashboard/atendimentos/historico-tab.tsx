@@ -35,10 +35,26 @@ function formatDate(iso: string) {
   })
 }
 
+function formatDateOnly(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+}
+
+function formatTimeOnly(iso: string) {
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 export function HistoricoTab() {
   const { profile } = useAuth()
   const supabase = createClient()
   const [closedTickets, setClosedTickets] = useState<Ticket[]>([])
+  const [creatorNames, setCreatorNames] = useState<Record<string, string>>({})
   const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
   const [pageIndex, setPageIndex] = useState(0)
   const [pageSize, setPageSize] = useState(10)
@@ -58,6 +74,29 @@ export function HistoricoTab() {
   useEffect(() => {
     fetchClosedTickets()
   }, [fetchClosedTickets])
+
+  useEffect(() => {
+    if (!supabase || closedTickets.length === 0) {
+      setCreatorNames({})
+      return
+    }
+    const creatorIds = [...new Set(closedTickets.map((t) => t.created_by).filter(Boolean))]
+    if (creatorIds.length === 0) {
+      setCreatorNames({})
+      return
+    }
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", creatorIds)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data ?? []).forEach((p: { id: string; name: string | null }) => {
+          map[p.id] = p.name ?? "—"
+        })
+        setCreatorNames(map)
+      })
+  }, [supabase, closedTickets])
 
   useEffect(() => {
     setPageIndex(0)
@@ -81,7 +120,7 @@ export function HistoricoTab() {
         <p className="text-muted-foreground">Nenhum atendimento de outro setor encerrado por você.</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-xl border bg-card/50">
             <div className="p-2">
               {(() => {
                 const filtered = filterTicketsBySearchAndDate(closedTickets, filter, "closed_at")
@@ -97,21 +136,34 @@ export function HistoricoTab() {
                   )
                 }
                 return (
-                  <div className="grid gap-2">
-                    {pageTickets.map((t) => (
-                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-                        <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none">
-                          <div className="flex items-center justify-between gap-2 min-h-0">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-sm font-semibold truncate">{t.title}</h3>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {t.closed_at ? formatDate(t.closed_at) : formatDate(t.created_at)}
-                              </p>
-                            </div>
+                  <div className="grid gap-0">
+                    <div className="grid grid-cols-[minmax(100px,140px)_minmax(0,1fr)_90px_64px] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/30 rounded-t-lg items-center">
+                      <span>Aberto por</span>
+                      <span>Título do chamado</span>
+                      <span className="text-right">Data</span>
+                      <span className="text-right">Horário</span>
+                    </div>
+                    {pageTickets.map((t, idx) => {
+                      const dateIso = t.closed_at ?? t.created_at
+                      const isLast = idx === pageTickets.length - 1
+                      return (
+                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`} className="contents">
+                        <Card className={`cursor-pointer overflow-hidden transition-colors hover:bg-muted/40 py-2.5 px-4 border-0 border-b border-border/50 shadow-none rounded-none ${idx === 0 ? "first:rounded-t-none" : ""} ${isLast ? "rounded-b-lg border-b-0" : ""}`}>
+                          <div className="grid grid-cols-[minmax(100px,140px)_minmax(0,1fr)_90px_64px] gap-3 items-center min-h-0">
+                            <span className="text-sm text-foreground truncate">
+                              {creatorNames[t.created_by] ?? "—"}
+                            </span>
+                            <span className="text-sm font-medium text-foreground truncate">{t.title}</span>
+                            <span className="text-xs text-muted-foreground text-right tabular-nums">
+                              {formatDateOnly(dateIso)}
+                            </span>
+                            <span className="text-xs text-muted-foreground text-right tabular-nums">
+                              {formatTimeOnly(dateIso)}
+                            </span>
                           </div>
                         </Card>
                       </Link>
-                    ))}
+                    )})}
                   </div>
                 )
               })()}

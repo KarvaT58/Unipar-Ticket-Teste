@@ -22,7 +22,8 @@ export default function FilaAtendimentosPage() {
         <SiteHeader />
         <div className="flex flex-1 flex-col">
           <PageHeader
-            title="Fila De Atendimentos"
+            title="Fila de atendimentos"
+            description="Chamados aguardando atendimento no seu setor."
             icon={<IconListNumbers className="size-5" />}
           />
           <div className="flex-1 px-4 pb-6 lg:px-6">

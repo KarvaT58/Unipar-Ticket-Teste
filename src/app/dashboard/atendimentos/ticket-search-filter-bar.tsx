@@ -25,17 +25,17 @@ export function TicketSearchFilterBar({
   compactDateRange = true,
 }: TicketSearchFilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-3 w-full">
-      <div className="relative flex-1 min-w-[200px] max-w-sm">
-        <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
+      <div className="relative flex-1 min-w-[180px] max-w-xs">
+        <IconSearch className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <Input
-          placeholder="Buscar por nome ou descrição..."
+          placeholder="Buscar..."
           value={value.search}
           onChange={(e) => onChange({ ...value, search: e.target.value })}
-          className="pl-9"
+          className="pl-8 h-9 bg-muted/30 border-muted-foreground/20"
         />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <DateRangePicker
           dateLabel={dateLabel}
           dateFrom={value.dateFrom}

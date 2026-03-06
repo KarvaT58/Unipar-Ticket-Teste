@@ -9,8 +9,10 @@ import type { Notification } from "@/lib/atendimento/notification-types"
 
 type NotificationContextType = {
   totalUnread: number
-  /** Total unread notifications for tickets (for Atendimentos sidebar badge) */
+  /** Total unread notifications for tickets (all ticket-related) */
   totalTicketUnread: number
+  /** Unread count for sidebar "Atendimentos" page only (chamados que iniciei + em andamento + encerrados), excludes queue-only */
+  atendimentosPageUnread: number
   iniciadosTabUnread: number
   atendimentosTabUnread: number
   filaTabUnread: number
@@ -31,11 +33,19 @@ type NotificationContextType = {
     chat_conversation_id: string | null
     task_id: string | null
     chat_sender_name: string | null
+    actor_name: string | null
     type: string
     created_at: string
     ticketTitle: string
     announcementTitle: string | null
   }>
+  /** First unread overdue (12h or 3d) notification for blocking popup */
+  overduePopupNotification: {
+    id: string
+    ticket_id: string
+    type: string
+    ticketTitle: string
+  } | null
   messageIdsWithNotification: Set<string>
   /** Unread count per chat conversation (for sidebar badge) */
   unreadByChatConversationId: Record<string, number>
@@ -43,6 +53,7 @@ type NotificationContextType = {
   markTicketAsRead: (ticketId: string) => Promise<void>
   markNotificationAsRead: (notificationId: string) => Promise<void>
   markChatConversationAsRead: (conversationId: string) => Promise<void>
+  dismissOverduePopup: (notificationId: string) => Promise<void>
   refetch: () => Promise<void>
 }
 
@@ -61,6 +72,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [ticketTitleByTicketId, setTicketTitleByTicketId] = React.useState<Record<string, string>>({})
   const [announcementTitleByAnnouncementId, setAnnouncementTitleByAnnouncementId] = React.useState<Record<string, string>>({})
   const [chatSenderNameByUserId, setChatSenderNameByUserId] = React.useState<Record<string, string>>({})
+  const [actorNameByUserId, setActorNameByUserId] = React.useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = React.useState(true)
 
   const fetchUnread = React.useCallback(async () => {
@@ -78,7 +90,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
     const { data: unread } = await supabase
       .from("notifications")
-      .select("id, ticket_id, ticket_message_id, announcement_id, chat_conversation_id, chat_sender_id, chat_message_id, task_id, type, created_at")
+      .select("id, ticket_id, ticket_message_id, announcement_id, chat_conversation_id, chat_sender_id, chat_message_id, task_id, type, created_at, actor_user_id")
       .eq("user_id", profile.id)
       .is("read_at", null)
       .order("created_at", { ascending: false })
@@ -111,7 +123,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const ticketIds = [...new Set(list.map((n) => n.ticket_id).filter(Boolean))] as string[]
       const announcementIds = [...new Set(list.map((n) => n.announcement_id).filter(Boolean))] as string[]
       const chatSenderIds = [...new Set(list.map((n) => n.chat_sender_id).filter(Boolean))] as string[]
-      const [ticketsRes, announcementsRes, profilesRes] = await Promise.all([
+      const actorIds = [...new Set(list.map((n) => n.actor_user_id).filter(Boolean))] as string[]
+      const [ticketsRes, announcementsRes, profilesRes, actorProfilesRes] = await Promise.all([
         ticketIds.length > 0
           ? supabase.from("tickets").select("id, title").in("id", ticketIds)
           : { data: [] as { id: string; title: string }[] },
@@ -120,6 +133,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           : { data: [] as { id: string; title: string }[] },
         chatSenderIds.length > 0
           ? supabase.from("profiles").select("id, name").in("id", chatSenderIds)
+          : { data: [] as { id: string; name: string | null }[] },
+        actorIds.length > 0
+          ? supabase.from("profiles").select("id, name").in("id", actorIds)
           : { data: [] as { id: string; name: string | null }[] },
       ])
       const titleMap: Record<string, string> = {}
@@ -137,10 +153,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         chatSenderNameMap[row.id] = row.name ?? "Usuário"
       })
       setChatSenderNameByUserId(chatSenderNameMap)
+      const actorNameMap: Record<string, string> = {}
+      ;(actorProfilesRes.data ?? []).forEach((row: { id: string; name: string | null }) => {
+        actorNameMap[row.id] = row.name ?? "Usuário"
+      })
+      setActorNameByUserId(actorNameMap)
     } else {
       setTicketTitleByTicketId({})
       setAnnouncementTitleByAnnouncementId({})
       setChatSenderNameByUserId({})
+      setActorNameByUserId({})
     }
 
     setIsLoading(false)
@@ -180,6 +202,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const filaTabUnread = notifications.filter((n) => n.ticket_id && filaTicketIds.has(n.ticket_id)).length
   const encerradosTabUnread = notifications.filter((n) => n.ticket_id && encerradosTicketIds.has(n.ticket_id)).length
   const historicoTabUnread = notifications.filter((n) => n.ticket_id && historicoTicketIds.has(n.ticket_id)).length
+  /** Notifications relevant only to the Atendimentos page tabs (excludes queue-only); used for sidebar "Atendimentos" badge */
+  const atendimentosPageUnread = iniciadosTabUnread + atendimentosTabUnread + encerradosTabUnread
   const unreadByTicketId = React.useMemo(() => {
     const map: Record<string, number> = {}
     for (const n of notifications) {
@@ -226,13 +250,27 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         chat_conversation_id: n.chat_conversation_id ?? null,
         task_id: n.task_id ?? null,
         chat_sender_name: n.chat_sender_id ? (chatSenderNameByUserId[n.chat_sender_id] ?? "Usuário") : null,
+        actor_name: n.actor_user_id ? (actorNameByUserId[n.actor_user_id] ?? "Usuário") : null,
         type: n.type,
         created_at: n.created_at ?? new Date().toISOString(),
         ticketTitle: n.ticket_id ? (ticketTitleByTicketId[n.ticket_id] ?? "Chamado") : "",
         announcementTitle: n.announcement_id ? (announcementTitleByAnnouncementId[n.announcement_id] ?? "Anúncio") : null,
       })),
-    [notifications, ticketTitleByTicketId, announcementTitleByAnnouncementId, chatSenderNameByUserId]
+    [notifications, ticketTitleByTicketId, announcementTitleByAnnouncementId, chatSenderNameByUserId, actorNameByUserId]
   )
+
+  const overduePopupNotification = React.useMemo(() => {
+    const item = unreadNotificationItems.find(
+      (i) => i.type === "ticket_overdue_12h" || i.type === "ticket_overdue_3d"
+    )
+    if (!item || !item.ticket_id) return null
+    return {
+      id: item.id,
+      ticket_id: item.ticket_id,
+      type: item.type,
+      ticketTitle: item.ticketTitle,
+    }
+  }, [unreadNotificationItems])
 
   const unreadByChatConversationId = React.useMemo(() => {
     const map: Record<string, number> = {}
@@ -283,9 +321,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     [supabase, profile, fetchUnread]
   )
 
+  const dismissOverduePopup = React.useCallback(
+    async (notificationId: string) => {
+      await markNotificationAsRead(notificationId)
+    },
+    [markNotificationAsRead]
+  )
+
   const value: NotificationContextType = {
     totalUnread,
     totalTicketUnread,
+    atendimentosPageUnread,
     iniciadosTabUnread,
     atendimentosTabUnread,
     filaTabUnread,
@@ -296,12 +342,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     ticketTitleByTicketId,
     notificationsByTicketId,
     unreadNotificationItems,
+    overduePopupNotification,
     messageIdsWithNotification,
     unreadByChatConversationId,
     isLoading,
     markTicketAsRead,
     markNotificationAsRead,
     markChatConversationAsRead,
+    dismissOverduePopup,
     refetch: fetchUnread,
   }
 

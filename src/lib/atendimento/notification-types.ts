@@ -11,4 +11,5 @@ export type Notification = {
   type: string
   read_at: string | null
   created_at: string
+  actor_user_id: string | null
 }
