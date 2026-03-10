@@ -815,7 +815,7 @@ export default function AtendimentoTicketPage() {
   }
 
   async function handleReabrir() {
-    if (!supabase || !ticketId || !ticket) return
+    if (!supabase || !ticketId || !ticket || !profile) return
     setReopenLoading(true)
     const { error } = await supabase
       .from("tickets")
@@ -829,6 +829,19 @@ export default function AtendimentoTicketPage() {
       .eq("id", ticketId)
     setReopenLoading(false)
     if (!error) {
+      if (ticket.created_by !== profile.id) {
+        await insertNotification(supabase, {
+          userId: ticket.created_by,
+          ticketId,
+          type: NOTIFICATION_TYPES.TICKET_REOPENED,
+          actorUserId: profile.id,
+        })
+      }
+      await insertNotificationsForSector(supabase, ticket.target_sector, {
+        ticketId,
+        type: NOTIFICATION_TYPES.TICKET_REOPENED,
+        actorUserId: profile.id,
+      })
       fetchTicket()
       fetchMessages()
       router.push("/dashboard/atendimentos?tab=iniciados")

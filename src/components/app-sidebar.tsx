@@ -4,6 +4,7 @@ import * as React from "react"
 import Image from "next/image"
 import {
   IconCalendarEvent,
+  IconChartBar,
   IconHeadset,
   IconLayoutDashboard,
   IconListNumbers,
@@ -17,6 +18,7 @@ import {
   IconPhone,
 } from "@tabler/icons-react"
 
+import { useAuth } from "@/contexts/auth-context"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
@@ -107,6 +109,8 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { profile } = useAuth()
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -135,7 +139,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           items={data.navMain}
           secondarySection={{ label: "", items: data.navFerramentas }}
         />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <NavSecondary
+          items={
+            profile && (profile.role === "admin" || profile.role === "adm")
+              ? [
+                  {
+                    title: "Administração Geral",
+                    url: "/dashboard/analitica-geral",
+                    icon: IconChartBar,
+                    className:
+                      "relative flex items-center gap-2 min-w-8 bg-primary text-primary-foreground duration-200 ease-linear hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground",
+                  },
+                  ...data.navSecondary,
+                ]
+              : data.navSecondary
+          }
+          className="mt-auto"
+        />
       </SidebarContent>
       <Separator className="shrink-0" />
       <SidebarFooter>

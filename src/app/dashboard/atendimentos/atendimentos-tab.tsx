@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   IconArrowBack,
@@ -26,7 +25,6 @@ import {
 } from "@/lib/atendimento/notifications"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -44,6 +42,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { TicketSearchFilterBar, filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
+import { TicketListItem } from "./ticket-list-item"
 import { toast } from "sonner"
 
 const CLOSURE_DESCRIPTION_MAX_LENGTH = 700
@@ -82,6 +81,7 @@ export function AtendimentosTab() {
   const router = useRouter()
   const [myTickets, setMyTickets] = useState<Ticket[]>([])
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({})
+  const [assigneeNames, setAssigneeNames] = useState<Record<string, string>>({})
   const [profilesInSector, setProfilesInSector] = useState<Profile[]>([])
   const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
   const [pageIndex, setPageIndex] = useState(0)
@@ -141,6 +141,29 @@ export function AtendimentosTab() {
           map[p.id] = p.name ?? "—"
         })
         setCreatorNames(map)
+      })
+  }, [supabase, myTickets])
+
+  useEffect(() => {
+    if (!supabase || myTickets.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    const assigneeIds = [...new Set(myTickets.map((t) => t.assigned_to_user_id).filter(Boolean))] as string[]
+    if (assigneeIds.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", assigneeIds)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data ?? []).forEach((p: { id: string; name: string | null }) => {
+          map[p.id] = p.name ?? "—"
+        })
+        setAssigneeNames(map)
       })
   }, [supabase, myTickets])
 
@@ -314,7 +337,7 @@ export function AtendimentosTab() {
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border bg-card/50">
-            <div className="p-2">
+            <div className="p-0">
               {(() => {
                 const filtered = filterTicketsBySearchAndDate(myTickets, filter, "created_at")
                 const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -328,59 +351,31 @@ export function AtendimentosTab() {
                     </div>
                   )
                 }
-                const gridCols = "minmax(110px,140px) minmax(150px,240px) 105px 88px 68px minmax(340px,1fr)"
                 return (
-                  <div className="grid gap-0">
-                    <div
-                      className="grid gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/30 rounded-t-lg items-center"
-                      style={{ gridTemplateColumns: gridCols }}
-                    >
-                      <span>Aberto por</span>
-                      <span>Título do chamado</span>
-                      <span>Status</span>
-                      <span className="tabular-nums">Data</span>
-                      <span className="tabular-nums">Horário</span>
-                      <span className="text-right">Ações</span>
-                    </div>
-                    {pageTickets.map((t, idx) => {
-                      const unreadCount = unreadByTicketId[t.id] ?? 0
+                  <div>
+                    {pageTickets.map((t) => {
+                      const hasUnread = (unreadByTicketId[t.id] ?? 0) > 0
                       const notificationLabel = getNotificationLabelForTicket(t.id)
-                      const hasUnread = unreadCount > 0
-                      const statusLabel = "Em andamento"
-                      const isLast = idx === pageTickets.length - 1
                       return (
-                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`} className="contents">
-                        <Card className={`cursor-pointer overflow-hidden transition-colors hover:bg-muted/40 py-2.5 px-4 border-0 border-b border-border/50 shadow-none rounded-none ${idx === 0 ? "first:rounded-t-none" : ""} ${isLast ? "rounded-b-lg border-b-0" : ""}`}>
-                          <div className="grid gap-3 items-center min-h-0" style={{ gridTemplateColumns: gridCols }}>
-                            <span className="text-sm text-foreground truncate">
-                              {creatorNames[t.created_by] ?? "—"}
-                            </span>
-                            <span className="text-sm font-medium text-foreground truncate flex items-center gap-1.5 min-w-0">
-                              <span className="truncate">{t.title}</span>
-                              {hasUnread && (
-                                <Badge variant="default" className="shrink-0 text-[10px] px-1.5 py-0">
-                                  {notificationLabel || "Nova mensagem"}
-                                </Badge>
-                              )}
-                            </span>
-                            <span className="flex items-center gap-1.5 shrink-0">
-                              <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
-                                {statusLabel}
-                              </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                              {formatDateOnly(t.created_at)}
-                            </span>
-                            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                              {formatTimeOnly(t.created_at)}
-                            </span>
-                            <div
-                              className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 min-w-0"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                              }}
-                            >
+                        <TicketListItem
+                          key={t.id}
+                          ticket={t}
+                          href={`/dashboard/atendimentos/${t.id}`}
+                          creatorName={creatorNames[t.created_by] ?? "—"}
+                          assigneeName={assigneeNames[t.assigned_to_user_id ?? ""] ?? "—"}
+                          statusLabel="Em andamento"
+                          statusClassName="bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                          dateDisplay={formatDateOnly(t.created_at)}
+                          timeDisplay={formatTimeOnly(t.created_at)}
+                          badge={
+                            hasUnread ? (
+                              <Badge variant="default" className="ml-1.5 shrink-0 text-[10px] px-1.5 py-0">
+                                {notificationLabel || "Nova mensagem"}
+                              </Badge>
+                            ) : undefined
+                          }
+                          actions={
+                            <>
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -436,11 +431,11 @@ export function AtendimentosTab() {
                                 <IconCircleX className="size-3.5 mr-1" />
                                 Encerrar
                               </Button>
-                            </div>
-                          </div>
-                        </Card>
-                      </Link>
-                    )})}
+                            </>
+                          }
+                        />
+                      )
+                    })}
                   </div>
                 )
               })()}

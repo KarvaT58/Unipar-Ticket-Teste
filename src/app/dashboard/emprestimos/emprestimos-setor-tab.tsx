@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
 import type { Loan, LoanAttachment } from "@/lib/emprestimos/types"
@@ -8,7 +8,20 @@ import { getSectorLabel } from "@/lib/atendimento/sectors"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
+import { IconEye } from "@tabler/icons-react"
+import { LoanDetailDialog } from "./loan-detail-dialog"
+import { filterLoans, type LoanSearchFilter } from "./loan-search-filter-bar"
 
 function formatDate(dateStr: string) {
   return new Date(dateStr + "T12:00:00").toLocaleDateString("pt-BR", {
@@ -29,7 +42,7 @@ type LoanWithNames = Loan & {
   lender_name: string | null
 }
 
-export function EmprestimosSetorTab() {
+export function EmprestimosSetorTab({ filter }: { filter: LoanSearchFilter }) {
   const { profile } = useAuth()
   const supabase = createClient()
   const [loans, setLoans] = useState<LoanWithNames[]>([])
@@ -37,6 +50,8 @@ export function EmprestimosSetorTab() {
     Record<string, LoanAttachment[]>
   >({})
   const [returningId, setReturningId] = useState<string | null>(null)
+  const [detailLoan, setDetailLoan] = useState<LoanWithNames | null>(null)
+  const [confirmReturnId, setConfirmReturnId] = useState<string | null>(null)
 
   const fetchLoans = useCallback(() => {
     if (!supabase || !profile?.department) return
@@ -44,6 +59,7 @@ export function EmprestimosSetorTab() {
       .from("loans")
       .select("*")
       .eq("sector", profile.department)
+      .is("returned_at", null)
       .order("return_date", { ascending: true })
       .then(({ data }) => {
         const list = (data as Loan[]) ?? []
@@ -129,6 +145,8 @@ export function EmprestimosSetorTab() {
     )
   }
 
+  const filtered = useMemo(() => filterLoans(loans, filter), [loans, filter])
+
   if (loans.length === 0) {
     return (
       <p className="text-muted-foreground">
@@ -142,8 +160,11 @@ export function EmprestimosSetorTab() {
       <h2 className="text-lg font-semibold">
         Empréstimos do setor {getSectorLabel(profile.department)}
       </h2>
-      <div className="grid gap-2">
-        {loans.map((loan) => {
+      {filtered.length === 0 ? (
+        <p className="text-muted-foreground text-sm">Nenhum empréstimo encontrado com os filtros aplicados.</p>
+      ) : (
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {filtered.map((loan) => {
           const status = getLoanStatus(loan)
           const attachments = attachmentsByLoanId[loan.id] ?? []
           return (
@@ -186,22 +207,73 @@ export function EmprestimosSetorTab() {
                       <span>{attachments.length} foto(s)</span>
                     )}
                   </div>
-                  {status !== "returned" && (
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      onClick={() => handleMarkReturned(loan.id)}
-                      disabled={returningId === loan.id}
+                      onClick={() => setDetailLoan(loan)}
+                      className="gap-1.5"
                     >
-                      {returningId === loan.id ? "Salvando…" : "Marcar como devolvido"}
+                      <IconEye className="size-4" />
+                      Ver empréstimo
                     </Button>
-                  )}
+                    {status !== "returned" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmReturnId(loan.id)}
+                        disabled={returningId === loan.id}
+                      >
+                        {returningId === loan.id ? "Salvando…" : "Marcar como devolvido"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </Card>
           )
         })}
       </div>
+      )}
+
+      <LoanDetailDialog
+        open={!!detailLoan}
+        onOpenChange={(open) => !open && setDetailLoan(null)}
+        loan={detailLoan}
+        attachments={detailLoan ? (attachmentsByLoanId[detailLoan.id] ?? []) : []}
+        onMarkReturned={(id) => {
+          setDetailLoan(null)
+          setConfirmReturnId(id)
+        }}
+        showMarkReturned
+      />
+
+      <AlertDialog
+        open={!!confirmReturnId}
+        onOpenChange={(open) => !open && setConfirmReturnId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar devolução</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja marcar este empréstimo como devolvido? Essa ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmReturnId) {
+                  handleMarkReturned(confirmReturnId)
+                  setConfirmReturnId(null)
+                }
+              }}
+            >
+              Confirmar devolução
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { type Icon } from "@tabler/icons-react"
 
 import { useIdeas } from "@/contexts/ideas-context"
@@ -21,6 +22,7 @@ export function NavSecondary({
     title: string
     url: string
     icon: Icon
+    className?: string
   }[]
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
   const { ideasPendingCount } = useIdeas()
@@ -32,7 +34,7 @@ export function NavSecondary({
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild>
-                <a href={item.url} className="relative">
+                <Link href={item.url} className={item.className ?? "relative"}>
                   <item.icon />
                   <span>{item.title}</span>
                   {item.url === "/dashboard/ideias" && ideasPendingCount > 0 && (
@@ -40,7 +42,7 @@ export function NavSecondary({
                       {ideasPendingCount > 99 ? "99+" : ideasPendingCount}
                     </SidebarMenuBadge>
                   )}
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

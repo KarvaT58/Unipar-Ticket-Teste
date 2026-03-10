@@ -86,6 +86,12 @@ export function LoanFormDialog({ open, onOpenChange, onSuccess }: Props) {
     }
   }, [open])
 
+  const disabledDates = React.useMemo(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return { before: d }
+  }, [])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!supabase || !profile) {
@@ -224,11 +230,7 @@ export function LoanFormDialog({ open, onOpenChange, onSuccess }: Props) {
               onChange={setReturnDate}
               placeholder="dd/mm/aaaa"
               aria-label="Data de devolução"
-              disabledDates={React.useMemo(() => {
-                const d = new Date()
-                d.setHours(0, 0, 0, 0)
-                return { before: d }
-              }, [])}
+              disabledDates={disabledDates}
             />
           </div>
           <div className="grid gap-2">

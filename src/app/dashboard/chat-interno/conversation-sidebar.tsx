@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { useChat } from "@/contexts/chat-context"
 import { useNotifications } from "@/contexts/notification-context"
 import { usePresence } from "@/contexts/presence-context"
-import { IconPin, IconPinFilled, IconPlus } from "@tabler/icons-react"
+import { IconPin, IconPinFilled, IconPlus, IconTrash } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import type { ChatConversationWithPeer } from "@/lib/chat/types"
 
 export function ConversationSidebar() {
@@ -30,6 +40,7 @@ export function ConversationSidebar() {
     startConversation,
     pinConversation,
     unpinConversation,
+    deleteConversation,
     refetchConversations,
     isLoadingConversations,
   } = useChat()
@@ -40,6 +51,7 @@ export function ConversationSidebar() {
   const [teamSearch, setTeamSearch] = React.useState("")
   const [teamUsers, setTeamUsers] = React.useState<Array<{ id: string; name: string; avatar_url: string | null; department: string }>>([])
   const [startingWith, setStartingWith] = React.useState<string | null>(null)
+  const [conversationToDelete, setConversationToDelete] = React.useState<ChatConversationWithPeer | null>(null)
 
   const filteredTeamUsers = React.useMemo(() => {
     const term = teamSearch.trim().toLowerCase()
@@ -111,6 +123,16 @@ export function ConversationSidebar() {
     [pinnedConversationIds, pinConversation, unpinConversation]
   )
 
+  const handleDeleteConversation = React.useCallback((conv: ChatConversationWithPeer) => {
+    setConversationToDelete(conv)
+  }, [])
+
+  const confirmDeleteConversation = React.useCallback(async () => {
+    if (!conversationToDelete) return
+    await deleteConversation(conversationToDelete.id)
+    setConversationToDelete(null)
+  }, [conversationToDelete, deleteConversation])
+
   return (
     <>
       <div
@@ -158,6 +180,7 @@ export function ConversationSidebar() {
                     setActiveConversationId(conv.id)
                   }}
                   onTogglePin={(e) => togglePin(e, conv.id)}
+                  onDelete={() => handleDeleteConversation(conv)}
                 />
               ))}
             </ul>
@@ -221,6 +244,33 @@ export function ConversationSidebar() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!conversationToDelete} onOpenChange={(open) => !open && setConversationToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apagar conversa</AlertDialogTitle>
+            <AlertDialogDescription>
+              {conversationToDelete ? (
+                <>
+                  Apagar a conversa com <strong>{conversationToDelete.other_name}</strong>? Todas as mensagens serão removidas e a conversa sairá da sua lista. Esta ação não pode ser desfeita.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async (e) => {
+                e.preventDefault()
+                await confirmDeleteConversation()
+              }}
+            >
+              Apagar conversa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
@@ -233,6 +283,7 @@ function ConversationItem({
   unreadCount,
   onSelect,
   onTogglePin,
+  onDelete,
 }: {
   conv: ChatConversationWithPeer
   isActive: boolean
@@ -241,6 +292,7 @@ function ConversationItem({
   unreadCount: number
   onSelect: () => void
   onTogglePin: (e: React.MouseEvent) => void
+  onDelete: () => void
 }) {
   return (
     <li>
@@ -300,6 +352,17 @@ function ConversationItem({
           ) : (
             <IconPin className="size-4 text-muted-foreground" />
           )}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+          className="shrink-0 rounded p-1 hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+          title="Apagar conversa"
+        >
+          <IconTrash className="size-4" />
         </button>
       </div>
     </li>

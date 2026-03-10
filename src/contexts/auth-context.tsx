@@ -59,10 +59,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       return
     }
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) fetchProfile(session.user.id)
-      else setProfile(null)
-      setLoading(false)
+    let cancelled = false
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return
+      if (session?.user) {
+        await fetchProfile(session.user.id)
+      } else {
+        setProfile(null)
+      }
+      if (!cancelled) setLoading(false)
     })
 
     const {
@@ -72,7 +77,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       else setProfile(null)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [supabase, fetchProfile])
 
   React.useEffect(() => {

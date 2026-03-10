@@ -109,44 +109,30 @@ export function ChartAreaInteractive() {
 
     const assignedPromise = supabase
       .from("tickets")
-      .select("assigned_at")
-      .not("assigned_at", "is", null)
-      .gte("assigned_at", startStr + "T00:00:00.000Z")
-      .lte("assigned_at", endStr + "T23:59:59.999Z")
+      .select("created_at")
+      .eq("status", "in_progress")
+      .not("assigned_to_user_id", "is", null)
+      .gte("created_at", startStr + "T00:00:00.000Z")
+      .lte("created_at", endStr + "T23:59:59.999Z")
 
     void Promise.all([
       closedPromise.then((r) => ({ data: r.data ?? [], error: r.error })),
       assignedPromise.then((r) => ({ data: r.data ?? [], error: r.error })),
-    ]).then(async ([closedResult, assignedResult]) => {
+    ]).then(([closedResult, assignedResult]) => {
       const closedByDay: Record<string, number> = {}
-      let assignedByDay: Record<string, number> = {}
+      const assignedByDay: Record<string, number> = {}
       const closedList = closedResult.error ? [] : (closedResult.data as { closed_at: string }[])
-      let assignedList = assignedResult.error ? [] : (assignedResult.data as { assigned_at: string }[])
+      const assignedList = assignedResult.error ? [] : (assignedResult.data as { created_at: string }[])
 
       closedList.forEach((row) => {
         const day = row.closed_at.slice(0, 10)
         closedByDay[day] = (closedByDay[day] ?? 0) + 1
       })
 
-      if (assignedResult.error || assignedList.length === 0) {
-        const fallback = await supabase
-          .from("tickets")
-          .select("created_at")
-          .eq("status", "in_progress")
-          .not("assigned_to_user_id", "is", null)
-          .gte("created_at", startStr + "T00:00:00.000Z")
-          .lte("created_at", endStr + "T23:59:59.999Z")
-        const fallbackData = (fallback.data ?? []) as { created_at: string }[]
-        fallbackData.forEach((row) => {
-          const day = row.created_at.slice(0, 10)
-          assignedByDay[day] = (assignedByDay[day] ?? 0) + 1
-        })
-      } else {
-        assignedList.forEach((row) => {
-          const day = row.assigned_at.slice(0, 10)
-          assignedByDay[day] = (assignedByDay[day] ?? 0) + 1
-        })
-      }
+      assignedList.forEach((row) => {
+        const day = row.created_at.slice(0, 10)
+        assignedByDay[day] = (assignedByDay[day] ?? 0) + 1
+      })
 
       const data = buildDailyData(closedByDay, assignedByDay, startStr, endStr)
       setChartData(data)

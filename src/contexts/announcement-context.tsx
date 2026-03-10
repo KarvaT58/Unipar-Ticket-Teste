@@ -5,22 +5,34 @@ import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
 import type { Announcement } from "@/lib/announcements/types"
 
+export type PopupPhase = "publish" | "event_day"
+
+type PopupAnnouncement = Announcement & { popupPhase: PopupPhase }
+
 type AnnouncementContextType = {
   anunciosEventosUnread: number
   markAnnouncementsAsRead: () => Promise<void>
-  popupAnnouncement: Announcement | null
-  dismissPopup: (announcementId: string) => Promise<void>
+  popupAnnouncement: PopupAnnouncement | null
+  dismissPopup: (announcementId: string, phase: PopupPhase) => Promise<void>
   refetchUnread: () => Promise<void>
   isLoading: boolean
 }
 
 const AnnouncementContext = React.createContext<AnnouncementContextType | undefined>(undefined)
 
+function todayLocalYYYYMMDD(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
 export function AnnouncementProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth()
   const supabase = createClient()
   const [anunciosEventosUnread, setAnunciosEventosUnread] = React.useState(0)
-  const [popupAnnouncement, setPopupAnnouncement] = React.useState<Announcement | null>(null)
+  const [popupAnnouncement, setPopupAnnouncement] = React.useState<PopupAnnouncement | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
 
   const fetchUnreadCount = React.useCallback(async () => {
@@ -50,6 +62,56 @@ export function AnnouncementProvider({ children }: { children: React.ReactNode }
       setPopupAnnouncement(null)
       return
     }
+    const todayStr = todayLocalYYYYMMDD()
+
+    const tryNewSchema = async (): Promise<boolean> => {
+      const { data: views, error: viewsError } = await supabase
+        .from("announcement_popup_views")
+        .select("announcement_id, phase")
+        .eq("user_id", profile.id)
+      if (viewsError != null) return false
+      const viewedSet = new Set((views ?? []).map((v) => `${v.announcement_id}:${v.phase}`))
+
+      const { data: list, error: listError } = await supabase
+        .from("announcements")
+        .select("id, title, description, event_date, created_by, created_at, updated_at, show_as_popup")
+        .eq("show_as_popup", true)
+        .order("created_at", { ascending: false })
+      if (listError != null) return false
+
+      const publishPending: Array<{ a: (NonNullable<typeof list>[number]) & { event_date?: string | null }; phase: "publish" }> = []
+      const eventDayPending: Array<{ a: (NonNullable<typeof list>[number]) & { event_date?: string | null }; phase: "event_day" }> = []
+
+      for (const a of list ?? []) {
+        const keyPublish = `${a.id}:publish`
+        const keyEventDay = `${a.id}:event_day`
+        const eventDateStr = a.event_date ? String(a.event_date).slice(0, 10) : null
+        if (!viewedSet.has(keyPublish)) {
+          publishPending.push({ a, phase: "publish" })
+        }
+        if (eventDateStr === todayStr && !viewedSet.has(keyEventDay)) {
+          eventDayPending.push({ a, phase: "event_day" })
+        }
+      }
+
+      const ordered = [...publishPending.map(({ a, phase }) => ({ a, phase })), ...eventDayPending.map(({ a, phase }) => ({ a, phase }))]
+      if (ordered.length === 0) {
+        setPopupAnnouncement(null)
+        return true
+      }
+      const first = ordered[0]!
+      const { data: creator } = await supabase.from("profiles").select("name").eq("id", first.a.created_by).single()
+      setPopupAnnouncement({
+        ...first.a,
+        creator_name: (creator as { name?: string })?.name ?? "Equipe",
+        popupPhase: first.phase,
+      } as PopupAnnouncement)
+      return true
+    }
+
+    const ok = await tryNewSchema()
+    if (ok) return
+
     const { data: dismissed } = await supabase
       .from("announcement_popup_dismissed")
       .select("announcement_id")
@@ -60,18 +122,18 @@ export function AnnouncementProvider({ children }: { children: React.ReactNode }
       .select("id, title, description, event_date, created_by, created_at, updated_at, show_as_popup")
       .eq("show_as_popup", true)
       .order("created_at", { ascending: false })
-    const pending = (list ?? []).filter((a) => !dismissedIds.has(a.id)) as Announcement[]
-    if (pending.length > 0) {
-      const first = pending[0]
-      const { data: creator } = await supabase
-        .from("profiles")
-        .select("name")
-        .eq("id", first.created_by)
-        .single()
-      setPopupAnnouncement({ ...first, creator_name: (creator as { name?: string })?.name ?? "Equipe" })
-    } else {
+    const pending = (list ?? []).filter((a) => !dismissedIds.has(a.id))
+    if (pending.length === 0) {
       setPopupAnnouncement(null)
+      return
     }
+    const first = pending[0]!
+    const { data: creator } = await supabase.from("profiles").select("name").eq("id", first.created_by).single()
+    setPopupAnnouncement({
+      ...first,
+      creator_name: (creator as { name?: string })?.name ?? "Equipe",
+      popupPhase: "publish",
+    } as PopupAnnouncement)
   }, [supabase, profile?.id])
 
   const markAnnouncementsAsRead = React.useCallback(async () => {
@@ -84,15 +146,32 @@ export function AnnouncementProvider({ children }: { children: React.ReactNode }
   }, [supabase, profile?.id])
 
   const dismissPopup = React.useCallback(
-    async (announcementId: string) => {
+    async (announcementId: string, phase: PopupPhase) => {
       if (!supabase || !profile) return
-      await supabase.from("announcement_popup_dismissed").upsert(
-        { user_id: profile.id, announcement_id: announcementId, dismissed_at: new Date().toISOString() },
-        { onConflict: "user_id,announcement_id" }
+      const announcement = popupAnnouncement?.id === announcementId ? popupAnnouncement : null
+
+      const { error: viewsError } = await supabase.from("announcement_popup_views").upsert(
+        {
+          announcement_id: announcementId,
+          user_id: profile.id,
+          phase,
+          viewed_at: new Date().toISOString(),
+          event_date_ref:
+            phase === "event_day" && announcement?.event_date
+              ? String(announcement.event_date).slice(0, 10)
+              : null,
+        },
+        { onConflict: "announcement_id,user_id,phase" }
       )
-      setPopupAnnouncement((prev) => (prev?.id === announcementId ? null : prev))
+      if (viewsError != null) {
+        await supabase.from("announcement_popup_dismissed").upsert(
+          { user_id: profile.id, announcement_id: announcementId, dismissed_at: new Date().toISOString() },
+          { onConflict: "user_id,announcement_id" }
+        )
+      }
+      await fetchPopupPending()
     },
-    [supabase, profile?.id]
+    [supabase, profile?.id, popupAnnouncement, fetchPopupPending]
   )
 
   const refetchUnread = React.useCallback(async () => {
@@ -117,30 +196,16 @@ export function AnnouncementProvider({ children }: { children: React.ReactNode }
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "announcements" },
-        async (payload) => {
-          const row = payload.new as { id: string; show_as_popup?: boolean; title: string; description?: string; event_date?: string; created_by: string; created_at: string; updated_at: string }
+        async () => {
           await fetchUnreadCount()
-          if (row.show_as_popup) {
-            const { data: creator } = await supabase.from("profiles").select("name").eq("id", row.created_by).single()
-            setPopupAnnouncement({
-              id: row.id,
-              title: row.title,
-              description: row.description ?? null,
-              event_date: row.event_date ?? null,
-              created_by: row.created_by,
-              created_at: row.created_at,
-              updated_at: row.updated_at,
-              show_as_popup: true,
-              creator_name: (creator as { name?: string })?.name ?? "Equipe",
-            })
-          }
+          await fetchPopupPending()
         }
       )
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, profile?.id, fetchUnreadCount])
+  }, [supabase, profile?.id, fetchUnreadCount, fetchPopupPending])
 
   const value: AnnouncementContextType = {
     anunciosEventosUnread,

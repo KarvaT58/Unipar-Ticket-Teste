@@ -7,6 +7,7 @@ export type Ticket = {
   created_by: string
   target_sector: string
   assigned_to_user_id: string | null
+  assigned_at: string | null
   status: TicketStatus
   created_at: string
   closed_at: string | null

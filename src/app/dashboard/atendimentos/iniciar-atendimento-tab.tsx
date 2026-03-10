@@ -9,7 +9,6 @@ import {
   IconChevronsRight,
   IconBuilding,
   IconCalendar,
-  IconMessageCircle,
   IconPlus,
   IconTrash,
   IconUpload,
@@ -19,7 +18,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
 import { useNotifications } from "@/contexts/notification-context"
-import { SECTORS, getSectorLabel } from "@/lib/atendimento/sectors"
+import { SECTORS } from "@/lib/atendimento/sectors"
 import type { Ticket } from "@/lib/atendimento/types"
 import { Button } from "@/components/ui/button"
 import {
@@ -41,6 +40,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { IconPencil } from "@tabler/icons-react"
 import { filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
+import { TicketListItem } from "./ticket-list-item"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -547,86 +548,47 @@ export function IniciarAtendimentoTab() {
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border bg-card/50">
-            <div className="p-2">
+            <div className="p-0">
               {(() => {
                 const pageCount = Math.max(1, Math.ceil(filteredTickets.length / pageSize))
                 const currentPage = Math.min(pageIndex, pageCount - 1)
                 const start = currentPage * pageSize
                 const pageTickets = filteredTickets.slice(start, start + pageSize)
-                const gridCols = "minmax(110px,140px) minmax(150px,240px) 105px 88px 68px minmax(220px,1fr)"
                 return (
-                  <div className="grid gap-0">
-                    <div
-                      className="grid gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b border-border bg-muted/30 rounded-t-lg items-center"
-                      style={{ gridTemplateColumns: gridCols }}
-                    >
-                      <span>Aberto por</span>
-                      <span>Título do chamado</span>
-                      <span>Status</span>
-                      <span className="tabular-nums">Data</span>
-                      <span className="tabular-nums">Horário</span>
-                      <span className="text-right">Ações</span>
-                    </div>
-                    {pageTickets.map((t, idx) => {
+                  <div>
+                    {pageTickets.map((t) => {
                       const statusLabel = t.status === "queue" ? "Aberto" : t.status === "in_progress" ? "Em andamento" : "Encerrado"
                       const canDelete = canDeleteTicket(t)
                       const hasUnread = (unreadByTicketId[t.id] ?? 0) > 0
-                      const isLast = idx === pageTickets.length - 1
+                      const notificationLabel = getNotificationLabelForTicket(t.id)
+                      const statusClassName =
+                        t.status === "queue"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                          : t.status === "in_progress"
+                            ? "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                            : "bg-muted text-foreground/90"
                       return (
-                        <Card
+                        <TicketListItem
                           key={t.id}
-                          className={cn(
-                            "overflow-hidden transition-colors hover:bg-muted/40 py-2.5 px-4 border-0 border-b border-border/50 shadow-none rounded-none",
-                            idx === 0 && "first:rounded-t-none",
-                            isLast && "rounded-b-lg border-b-0"
-                          )}
-                        >
-                          <div
-                            className="grid gap-3 items-center min-h-0"
-                            style={{ gridTemplateColumns: gridCols }}
-                          >
-                            <span className="text-sm text-foreground truncate min-w-0">
-                              {profile?.name ?? "—"}
-                            </span>
-                            <span className="text-sm font-medium text-foreground truncate min-w-0">
-                              {t.title}
-                            </span>
-                            <span className="flex items-center gap-1.5 shrink-0">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0",
-                                  t.status === "queue" &&
-                                    "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
-                                  t.status === "in_progress" &&
-                                    "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
-                                )}
-                              >
-                                {t.status === "queue" && hasUnread && (
-                                  <span className="size-1 rounded-full bg-red-500" aria-hidden />
-                                )}
-                                {statusLabel}
-                              </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                              {formatDateOnly(t.created_at)}
-                            </span>
-                            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                              {formatTimeOnly(t.created_at)}
-                            </span>
-                            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 min-w-0">
-                              <Button asChild variant="outline" size="sm" className="h-7 text-xs">
-                                <Link href={`/dashboard/atendimentos/${t.id}`}>
-                                  <IconMessageCircle className="size-3.5 mr-1" />
-                                  Ver conversa
-                                </Link>
-                              </Button>
+                          ticket={t}
+                          href={`/dashboard/atendimentos/${t.id}`}
+                          creatorName={profile?.name ?? "—"}
+                          assigneeName={assigneeNames[t.assigned_to_user_id ?? ""] ?? "—"}
+                          statusLabel={statusLabel}
+                          statusClassName={statusClassName}
+                          dateDisplay={formatDateOnly(t.created_at)}
+                          timeDisplay={formatTimeOnly(t.created_at)}
+                          badge={
+                            hasUnread ? (
+                              <Badge variant="destructive" className="ml-1.5 shrink-0 text-[10px] px-1.5 py-0">
+                                {notificationLabel || "Nova mensagem"}
+                              </Badge>
+                            ) : undefined
+                          }
+                          actions={
+                            <>
                               {t.status === "queue" && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  onClick={() => openEdit(t)}
-                                >
+                                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openEdit(t)}>
                                   <IconPencil className="size-3.5 mr-1" />
                                   Editar
                                 </Button>
@@ -646,9 +608,9 @@ export function IniciarAtendimentoTab() {
                                   {deleteLoading === t.id ? "Excluindo…" : "Apagar"}
                                 </Button>
                               )}
-                            </div>
-                          </div>
-                        </Card>
+                            </>
+                          }
+                        />
                       )
                     })}
                   </div>

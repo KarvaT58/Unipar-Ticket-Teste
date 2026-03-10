@@ -124,6 +124,23 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Barras de rolagem finas na cor primária (vermelho do sistema) */
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--primary);
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--primary) 80%, black);
   }
   body {
     @apply bg-background text-foreground;

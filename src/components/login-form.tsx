@@ -57,10 +57,10 @@ export function LoginForm({
     >
       <FieldGroup>
         <div className="flex flex-col gap-1 text-left">
-          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
+          <h1 className="text-xl font-bold text-foreground md:text-2xl">
             Bem-vindo de volta
           </h1>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Entre com suas credenciais para acessar
           </p>
         </div>
@@ -73,7 +73,7 @@ export function LoginForm({
           <p className="text-center text-sm text-destructive">{error}</p>
         )}
         <Field>
-          <FieldLabel htmlFor="email" className="text-gray-700">
+          <FieldLabel htmlFor="email" className="text-foreground">
             E-mail
           </FieldLabel>
           <Input
@@ -82,12 +82,12 @@ export function LoginForm({
             placeholder="ti.cas@unipar.br"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-lg border-gray-200 bg-white text-gray-900 placeholder:text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-400"
+            className="rounded-lg"
             required
           />
         </Field>
         <Field>
-          <FieldLabel htmlFor="password" className="text-gray-700">
+          <FieldLabel htmlFor="password" className="text-foreground">
             Senha
           </FieldLabel>
           <div className="relative">
@@ -97,14 +97,14 @@ export function LoginForm({
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="rounded-lg border-gray-200 bg-white pr-9 text-gray-900 placeholder:text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-400"
+              className="rounded-lg pr-9"
               required
             />
             <button
               type="button"
               tabIndex={-1}
               onClick={() => setShowPassword((p) => !p)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
               aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
             >
               {showPassword ? (

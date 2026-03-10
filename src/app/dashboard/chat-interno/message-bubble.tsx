@@ -1,8 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { IconPin, IconPinFilled, IconTrash } from "@tabler/icons-react"
-import { Button } from "@/components/ui/button"
+import { IconDotsVertical, IconPin, IconPinFilled, IconPencil, IconTrash } from "@tabler/icons-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import type { ChatMessage } from "@/lib/chat/types"
 
 function formatMessageTime(iso: string) {
@@ -28,6 +33,7 @@ type MessageBubbleProps = {
   isPinned: boolean
   canPin?: boolean
   onTogglePin: () => void
+  onEdit?: () => void
   onDelete?: () => void
   getAttachmentUrl: (path: string) => Promise<string | null>
 }
@@ -40,25 +46,27 @@ export function MessageBubble({
   isPinned,
   canPin = true,
   onTogglePin,
+  onEdit,
   onDelete,
   getAttachmentUrl,
 }: MessageBubbleProps) {
   const [fileUrl, setFileUrl] = React.useState<string | null>(null)
+  const isDeleted = Boolean(message.deleted_at)
 
   React.useEffect(() => {
-    if (!message.file_path) return
+    if (!message.file_path || isDeleted) return
     let cancelled = false
     getAttachmentUrl(message.file_path).then((url) => {
       if (!cancelled) setFileUrl(url)
     })
     return () => { cancelled = true }
-  }, [message.file_path, getAttachmentUrl])
+  }, [message.file_path, getAttachmentUrl, isDeleted])
 
   const content = (
     <div className={`flex max-w-[85%] flex-col gap-0.5 rounded-lg px-3 py-2 ${isOwn ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
       <div className="flex items-center gap-2">
         <p className="text-xs font-semibold opacity-90">{senderName}</p>
-        {message.is_priority && (
+        {message.is_priority && !isDeleted && (
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
               isOwn ? "bg-primary-foreground/20 text-primary-foreground" : "bg-amber-500/90 text-white"
@@ -68,42 +76,62 @@ export function MessageBubble({
           </span>
         )}
       </div>
-      <MessageContent message={message} fileUrl={fileUrl} />
+      {isDeleted ? (
+        <p className="text-sm italic opacity-80">Mensagem apagada</p>
+      ) : (
+        <MessageContent message={message} fileUrl={fileUrl} />
+      )}
       <div className="mt-1 flex items-center justify-between gap-2">
         <span className="text-[10px] opacity-80">
           {formatMessageDate(message.created_at)} {formatMessageTime(message.created_at)}
+          {message.edited_at && !isDeleted && (
+            <span className="ml-1 opacity-80">· editada</span>
+          )}
         </span>
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={canPin ? onTogglePin : undefined}
-            disabled={!canPin && !isPinned}
-            className="rounded p-0.5 opacity-70 hover:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={
-              !canPin && !isPinned
-                ? "Máximo de 3 mensagens fixadas"
-                : isPinned
-                  ? "Desfixar mensagem"
-                  : "Fixar mensagem"
-            }
-          >
-            {isPinned ? (
-              <IconPinFilled className="size-3.5" />
-            ) : (
-              <IconPin className="size-3.5" />
-            )}
-          </button>
-          {isOwn && onDelete && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
               type="button"
-              onClick={onDelete}
-              className="rounded p-0.5 opacity-70 hover:opacity-100 hover:text-destructive"
-              title="Apagar mensagem"
+              className="rounded p-0.5 opacity-70 hover:opacity-100 focus:outline-none"
+              aria-label="Opções da mensagem"
             >
-              <IconTrash className="size-3.5" />
+              <IconDotsVertical className="size-3.5" />
             </button>
-          )}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={isOwn ? "end" : "start"} side="top">
+            {!isDeleted && isOwn && onEdit && (
+              <DropdownMenuItem onClick={onEdit}>
+                <IconPencil className="size-4" />
+                Editar
+              </DropdownMenuItem>
+            )}
+            {isOwn && onDelete && (
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={onDelete}
+              >
+                <IconTrash className="size-4" />
+                Apagar
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              onClick={canPin ? onTogglePin : undefined}
+              disabled={!canPin && !isPinned}
+            >
+              {isPinned ? (
+                <>
+                  <IconPinFilled className="size-4" />
+                  Desfixar
+                </>
+              ) : (
+                <>
+                  <IconPin className="size-4" />
+                  Fixar
+                </>
+              )}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   )

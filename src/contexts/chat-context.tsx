@@ -47,8 +47,10 @@ type ChatContextType = {
   ) => Promise<void>
   pinConversation: (conversationId: string) => Promise<void>
   unpinConversation: (conversationId: string) => Promise<void>
+  deleteConversation: (conversationId: string) => Promise<void>
   pinMessage: (messageId: string) => Promise<void>
   unpinMessage: (messageId: string) => Promise<void>
+  editMessage: (conversationId: string, messageId: string, content: string) => Promise<void>
   deleteMessage: (conversationId: string, messageId: string) => Promise<void>
   setTyping: (conversationId: string, typing: boolean) => void
   leaveTypingChannel: (conversationId: string) => void
@@ -133,7 +135,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       const { data: lastMessages } = await supabase
         .from("chat_messages")
-        .select("conversation_id, content, message_type")
+        .select("conversation_id, content, message_type, deleted_at")
         .in(
           "conversation_id",
           list.map((c) => c.id)
@@ -143,8 +145,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const lastByConv = new Map<string | undefined, { content: string | null; message_type: string }>()
       for (const m of lastMessages ?? []) {
         if (m.conversation_id && !lastByConv.has(m.conversation_id)) {
+          const preview = m.deleted_at ? "[Mensagem apagada]" : (m.message_type === "text" ? (m.content ?? null) : `[${m.message_type}]`)
           lastByConv.set(m.conversation_id, {
-            content: m.content ?? null,
+            content: preview,
             message_type: m.message_type ?? "text",
           })
         }
@@ -176,7 +179,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase
           .from("chat_messages")
-          .select("id, conversation_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at")
+          .select("id, conversation_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at, edited_at, deleted_at")
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: false })
           .limit(MESSAGES_PAGE_SIZE)
@@ -208,7 +211,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase
           .from("chat_messages")
-          .select("id, conversation_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at")
+          .select("id, conversation_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at, edited_at, deleted_at")
           .eq("conversation_id", conversationId)
           .lt("created_at", oldest.created_at)
           .order("created_at", { ascending: false })
@@ -280,7 +283,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (cancelled || !notif?.chat_message_id) return
         const { data: msg } = await supabase
           .from("chat_messages")
-          .select("id, conversation_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at")
+          .select("id, conversation_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at, edited_at, deleted_at")
           .eq("id", notif.chat_message_id)
           .single()
         if (cancelled || !msg) return
@@ -457,6 +460,45 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [supabase, profile?.id]
   )
 
+  const leaveTypingChannel = React.useCallback((conversationId: string) => {
+    const channelKey = `${TYPING_CHANNEL_PREFIX}${conversationId}`
+    const channel = channelsRef.current.get(channelKey)
+    if (channel) {
+      supabase?.removeChannel(channel)
+      channelsRef.current.delete(channelKey)
+    }
+    setTypingUserIdsByConversationId((prev) => {
+      const next = { ...prev }
+      delete next[conversationId]
+      return next
+    })
+  }, [supabase])
+
+  const deleteConversation = React.useCallback(
+    async (conversationId: string) => {
+      if (!supabase || !profile?.id) return
+      const { error } = await supabase
+        .from("chat_conversations")
+        .delete()
+        .eq("id", conversationId)
+      if (error) return
+      leaveTypingChannel(conversationId)
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId))
+      setMessagesByConversationId((prev) => {
+        const next = { ...prev }
+        delete next[conversationId]
+        return next
+      })
+      setPinnedConversationIds((prev) => {
+        const next = new Set(prev)
+        next.delete(conversationId)
+        return next
+      })
+      setActiveConversationId((current) => (current === conversationId ? null : current))
+    },
+    [supabase, profile?.id, leaveTypingChannel]
+  )
+
   const pinMessage = React.useCallback(
     async (messageId: string) => {
       if (!supabase || !profile?.id) return
@@ -491,7 +533,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!supabase || !profile?.id) return
       const { error } = await supabase
         .from("chat_messages")
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", messageId)
         .eq("sender_id", profile.id)
       if (error) return
@@ -499,13 +541,38 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const list = prev[conversationId] ?? []
         return {
           ...prev,
-          [conversationId]: list.filter((m) => m.id !== messageId),
+          [conversationId]: list.map((m) =>
+            m.id === messageId ? { ...m, deleted_at: new Date().toISOString() } : m
+          ),
         }
       })
       setPinnedMessageIds((prev) => {
         const next = new Set(prev)
         next.delete(messageId)
         return next
+      })
+    },
+    [supabase, profile?.id]
+  )
+
+  const editMessage = React.useCallback(
+    async (conversationId: string, messageId: string, content: string) => {
+      if (!supabase || !profile?.id) return
+      const editedAt = new Date().toISOString()
+      const { error } = await supabase
+        .from("chat_messages")
+        .update({ content, edited_at: editedAt })
+        .eq("id", messageId)
+        .eq("sender_id", profile.id)
+      if (error) return
+      setMessagesByConversationId((prev) => {
+        const list = prev[conversationId] ?? []
+        return {
+          ...prev,
+          [conversationId]: list.map((m) =>
+            m.id === messageId ? { ...m, content, edited_at: editedAt } : m
+          ),
+        }
       })
     },
     [supabase, profile?.id]
@@ -541,20 +608,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     },
     [supabase, profile?.id]
   )
-
-  const leaveTypingChannel = React.useCallback((conversationId: string) => {
-    const channelKey = `${TYPING_CHANNEL_PREFIX}${conversationId}`
-    const channel = channelsRef.current.get(channelKey)
-    if (channel) {
-      supabase?.removeChannel(channel)
-      channelsRef.current.delete(channelKey)
-    }
-    setTypingUserIdsByConversationId((prev) => {
-      const next = { ...prev }
-      delete next[conversationId]
-      return next
-    })
-  }, [supabase])
 
   const getAttachmentUrl = React.useCallback(
     async (path: string): Promise<string | null> => {
@@ -592,8 +645,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     sendMessage,
     pinConversation,
     unpinConversation,
+    deleteConversation,
   pinMessage,
   unpinMessage,
+  editMessage,
   deleteMessage,
   setTyping,
   leaveTypingChannel,

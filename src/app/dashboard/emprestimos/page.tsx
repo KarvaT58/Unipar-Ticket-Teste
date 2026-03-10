@@ -27,10 +27,8 @@ export default function EmprestimosPage() {
             description="Empreste itens para colegas, acompanhe o que você emprestou e o que pegou emprestado."
             icon={<IconPackage className="size-5" />}
           />
-          <div className="flex-1 overflow-auto px-4 pb-6 lg:px-6">
-            <div className="mx-auto mt-6 w-full max-w-2xl">
-              <EmprestimosTabs />
-            </div>
+          <div className="flex-1 overflow-auto px-4 pb-6 pt-4 lg:px-6">
+            <EmprestimosTabs />
           </div>
         </div>
       </SidebarInset>

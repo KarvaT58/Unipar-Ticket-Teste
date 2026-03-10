@@ -24,7 +24,7 @@ export default function AnunciosEventosPage() {
             description="Mural de avisos e eventos — não é chat."
             icon={<IconCalendarEvent className="size-5" />}
           />
-          <div className="flex-1 px-4 pb-6 lg:px-6">
+          <div className="flex min-h-0 flex-1 px-4 pb-6 lg:px-6">
             <AnnouncementFeed />
           </div>
         </div>

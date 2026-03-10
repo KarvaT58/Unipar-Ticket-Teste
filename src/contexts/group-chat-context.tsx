@@ -54,6 +54,7 @@ type GroupChatContextType = {
   typingUserIdsByGroupId: Record<string, string[]>
   getAttachmentUrl: (path: string) => Promise<string | null>
   canManageMembers: (group: ChatGroup) => boolean
+  editMessage: (groupId: string, messageId: string, content: string) => Promise<void>
   deleteMessage: (groupId: string, messageId: string) => Promise<void>
 }
 
@@ -97,15 +98,16 @@ export function GroupChatProvider({ children }: { children: React.ReactNode }) {
       const groupIds = groupRows.map((g) => g.id)
       const { data: lastMessages } = await supabase
         .from("chat_group_messages")
-        .select("group_id, content, message_type")
+        .select("group_id, content, message_type, deleted_at")
         .in("group_id", groupIds)
         .order("created_at", { ascending: false })
 
       const lastByGroup = new Map<string, { content: string | null; message_type: string }>()
       for (const m of lastMessages ?? []) {
         if (m.group_id && !lastByGroup.has(m.group_id)) {
+          const preview = m.deleted_at ? "[Mensagem apagada]" : (m.message_type === "text" ? m.content ?? null : `[${m.message_type}]`)
           lastByGroup.set(m.group_id, {
-            content: m.content ?? null,
+            content: preview,
             message_type: m.message_type ?? "text",
           })
         }
@@ -169,7 +171,7 @@ export function GroupChatProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase
           .from("chat_group_messages")
-          .select("id, group_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at")
+          .select("id, group_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at, edited_at, deleted_at")
           .eq("group_id", groupId)
           .order("created_at", { ascending: false })
           .limit(MESSAGES_PAGE_SIZE)
@@ -201,7 +203,7 @@ export function GroupChatProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase
           .from("chat_group_messages")
-          .select("id, group_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at")
+          .select("id, group_id, sender_id, content, message_type, file_path, file_name, is_priority, created_at, edited_at, deleted_at")
           .eq("group_id", groupId)
           .lt("created_at", oldest.created_at)
           .order("created_at", { ascending: false })
@@ -510,19 +512,48 @@ export function GroupChatProvider({ children }: { children: React.ReactNode }) {
   const deleteMessage = React.useCallback(
     async (groupId: string, messageId: string) => {
       if (!supabase || !profile?.id) return
-      await supabase
+      const { error } = await supabase
         .from("chat_group_messages")
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", messageId)
         .eq("sender_id", profile.id)
+      if (error) return
       setMessagesByGroupId((prev) => {
         const list = prev[groupId] ?? []
-        return { ...prev, [groupId]: list.filter((m) => m.id !== messageId) }
+        return {
+          ...prev,
+          [groupId]: list.map((m) =>
+            m.id === messageId ? { ...m, deleted_at: new Date().toISOString() } : m
+          ),
+        }
       })
       setPinnedMessageIds((prev) => {
         const next = new Set(prev)
         next.delete(messageId)
         return next
+      })
+    },
+    [supabase, profile?.id]
+  )
+
+  const editMessage = React.useCallback(
+    async (groupId: string, messageId: string, content: string) => {
+      if (!supabase || !profile?.id) return
+      const editedAt = new Date().toISOString()
+      const { error } = await supabase
+        .from("chat_group_messages")
+        .update({ content, edited_at: editedAt })
+        .eq("id", messageId)
+        .eq("sender_id", profile.id)
+      if (error) return
+      setMessagesByGroupId((prev) => {
+        const list = prev[groupId] ?? []
+        return {
+          ...prev,
+          [groupId]: list.map((m) =>
+            m.id === messageId ? { ...m, content, edited_at: editedAt } : m
+          ),
+        }
       })
     },
     [supabase, profile?.id]
@@ -557,6 +588,7 @@ export function GroupChatProvider({ children }: { children: React.ReactNode }) {
     typingUserIdsByGroupId,
     getAttachmentUrl,
     canManageMembers,
+    editMessage,
     deleteMessage,
   }
 

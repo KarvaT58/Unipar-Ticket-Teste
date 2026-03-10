@@ -18,8 +18,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { MessageBubble } from "./message-bubble"
 import { MessageInput } from "./message-input"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import type { ChatConversationWithPeer } from "@/lib/chat/types"
 
@@ -44,6 +52,7 @@ export function ConversationView({ conversation }: ConversationViewProps) {
     pinMessage,
     unpinMessage,
     deleteMessage,
+    editMessage,
     setTyping,
     leaveTypingChannel,
     getAttachmentUrl,
@@ -57,6 +66,7 @@ export function ConversationView({ conversation }: ConversationViewProps) {
   const skipScrollToEndRef = React.useRef(false)
   const prevMessagesLengthRef = React.useRef(0)
   const [deleteTarget, setDeleteTarget] = React.useState<{ conversationId: string; messageId: string } | null>(null)
+  const [editTarget, setEditTarget] = React.useState<{ conversationId: string; messageId: string; content: string } | null>(null)
 
   const messages = conversation ? messagesByConversationId[conversation.id] ?? [] : []
   const typingUserIds = conversation ? typingUserIdsByConversationId[conversation.id] ?? [] : []
@@ -217,6 +227,13 @@ export function ConversationView({ conversation }: ConversationViewProps) {
                     ? () => setDeleteTarget({ conversationId: conversation.id, messageId: msg.id })
                     : undefined
                 }
+                onEdit={
+                  msg.sender_id === profile?.id &&
+                  msg.message_type === "text" &&
+                  !msg.deleted_at
+                    ? () => setEditTarget({ conversationId: conversation.id, messageId: msg.id, content: msg.content ?? "" })
+                    : undefined
+                }
                 getAttachmentUrl={getAttachmentUrl}
               />
             ))}
@@ -263,6 +280,37 @@ export function ConversationView({ conversation }: ConversationViewProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar mensagem</DialogTitle>
+          </DialogHeader>
+          {editTarget && (
+            <Textarea
+              value={editTarget.content}
+              onChange={(e) => setEditTarget((prev) => prev ? { ...prev, content: e.target.value } : null)}
+              placeholder="Texto da mensagem"
+              className="min-h-24"
+            />
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (editTarget && editTarget.content.trim()) {
+                  void editMessage(editTarget.conversationId, editTarget.messageId, editTarget.content.trim())
+                  setEditTarget(null)
+                }
+              }}
+            >
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

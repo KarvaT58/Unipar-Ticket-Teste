@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -12,7 +11,6 @@ import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
 import type { Ticket } from "@/lib/atendimento/types"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -22,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { TicketSearchFilterBar, filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
+import { TicketListItem } from "./ticket-list-item"
 
 const PAGE_SIZES = [10, 20, 30, 50]
 
@@ -55,6 +54,7 @@ export function HistoricoTab() {
   const supabase = createClient()
   const [closedTickets, setClosedTickets] = useState<Ticket[]>([])
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({})
+  const [assigneeNames, setAssigneeNames] = useState<Record<string, string>>({})
   const [filter, setFilter] = useState<TicketSearchFilter>({ search: "", dateFrom: "", dateTo: "" })
   const [pageIndex, setPageIndex] = useState(0)
   const [pageSize, setPageSize] = useState(10)
@@ -99,6 +99,29 @@ export function HistoricoTab() {
   }, [supabase, closedTickets])
 
   useEffect(() => {
+    if (!supabase || closedTickets.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    const assigneeIds = [...new Set(closedTickets.map((t) => t.assigned_to_user_id).filter(Boolean))] as string[]
+    if (assigneeIds.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", assigneeIds)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data ?? []).forEach((p: { id: string; name: string | null }) => {
+          map[p.id] = p.name ?? "—"
+        })
+        setAssigneeNames(map)
+      })
+  }, [supabase, closedTickets])
+
+  useEffect(() => {
     setPageIndex(0)
   }, [filter.search, filter.dateFrom, filter.dateTo])
 
@@ -121,7 +144,7 @@ export function HistoricoTab() {
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border bg-card/50">
-            <div className="p-2">
+            <div className="p-0">
               {(() => {
                 const filtered = filterTicketsBySearchAndDate(closedTickets, filter, "closed_at")
                 const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -136,34 +159,23 @@ export function HistoricoTab() {
                   )
                 }
                 return (
-                  <div className="grid gap-0">
-                    <div className="grid grid-cols-[minmax(100px,140px)_minmax(0,1fr)_90px_64px] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/30 rounded-t-lg items-center">
-                      <span>Aberto por</span>
-                      <span>Título do chamado</span>
-                      <span className="text-right">Data</span>
-                      <span className="text-right">Horário</span>
-                    </div>
-                    {pageTickets.map((t, idx) => {
+                  <div>
+                    {pageTickets.map((t) => {
                       const dateIso = t.closed_at ?? t.created_at
-                      const isLast = idx === pageTickets.length - 1
                       return (
-                      <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`} className="contents">
-                        <Card className={`cursor-pointer overflow-hidden transition-colors hover:bg-muted/40 py-2.5 px-4 border-0 border-b border-border/50 shadow-none rounded-none ${idx === 0 ? "first:rounded-t-none" : ""} ${isLast ? "rounded-b-lg border-b-0" : ""}`}>
-                          <div className="grid grid-cols-[minmax(100px,140px)_minmax(0,1fr)_90px_64px] gap-3 items-center min-h-0">
-                            <span className="text-sm text-foreground truncate">
-                              {creatorNames[t.created_by] ?? "—"}
-                            </span>
-                            <span className="text-sm font-medium text-foreground truncate">{t.title}</span>
-                            <span className="text-xs text-muted-foreground text-right tabular-nums">
-                              {formatDateOnly(dateIso)}
-                            </span>
-                            <span className="text-xs text-muted-foreground text-right tabular-nums">
-                              {formatTimeOnly(dateIso)}
-                            </span>
-                          </div>
-                        </Card>
-                      </Link>
-                    )})}
+                        <TicketListItem
+                          key={t.id}
+                          ticket={t}
+                          href={`/dashboard/atendimentos/${t.id}`}
+                          creatorName={creatorNames[t.created_by] ?? "—"}
+                          assigneeName={assigneeNames[t.assigned_to_user_id ?? ""] ?? "—"}
+                          statusLabel="Encerrado"
+                          statusClassName="bg-muted text-foreground/90"
+                          dateDisplay={formatDateOnly(dateIso)}
+                          timeDisplay={formatTimeOnly(dateIso)}
+                        />
+                      )
+                    })}
                   </div>
                 )
               })()}

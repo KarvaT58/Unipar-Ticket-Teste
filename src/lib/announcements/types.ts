@@ -7,6 +7,8 @@ export type AnnouncementAttachment = {
   created_at: string
 }
 
+export type AudienceType = "all" | "specific_users"
+
 export type Announcement = {
   id: string
   title: string
@@ -16,6 +18,9 @@ export type Announcement = {
   created_at: string
   updated_at: string
   show_as_popup: boolean
+  audience_type: AudienceType
+  /** When audience_type === 'specific_users', list of user ids targeted */
+  audience_user_ids?: string[]
   attachments?: AnnouncementAttachment[]
   creator_name?: string
 }

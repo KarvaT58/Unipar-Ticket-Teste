@@ -53,7 +53,7 @@ export function AnnouncementPopupModal() {
 
   const handleClose = React.useCallback(async () => {
     if (!announcement || !canClose) return
-    await dismissPopup(announcement.id)
+    await dismissPopup(announcement.id, announcement.popupPhase)
   }, [announcement, canClose, dismissPopup])
 
   if (!profile) return null
@@ -74,7 +74,11 @@ export function AnnouncementPopupModal() {
         <DialogHeader>
           <DialogTitle className="pr-8">Aviso importante</DialogTitle>
           <DialogDescription asChild>
-            <span className="text-muted-foreground">Novo anúncio para toda a equipe</span>
+            <span className="text-muted-foreground">
+              {announcement?.popupPhase === "event_day"
+                ? "Evento de hoje"
+                : "Novo anúncio para a equipe"}
+            </span>
           </DialogDescription>
         </DialogHeader>
         {announcement && (

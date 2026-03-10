@@ -18,21 +18,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/contexts/auth-context"
-import { IconHelp, IconPhotoPlus } from "@tabler/icons-react"
+import { IconHelp, IconPhotoPlus, IconSearch, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 const HELP_IMAGES_BUCKET = "help-images"
 const TITLE_MAX = 120
-
-// Placeholder when DB is empty (fallback)
-const PLACEHOLDER_IMAGES = [
-  { id: "1", src: "https://picsum.photos/400/300?random=1", title: "Como acessar o sistema" },
-  { id: "2", src: "https://picsum.photos/400/300?random=2", title: "Configuração de perfil" },
-  { id: "3", src: "https://picsum.photos/400/300?random=3", title: "Relatórios e dashboards" },
-  { id: "4", src: "https://picsum.photos/400/300?random=4", title: "Solicitar suporte" },
-  { id: "5", src: "https://picsum.photos/400/300?random=5", title: "FAQ rápido" },
-  { id: "6", src: "https://picsum.photos/400/300?random=6", title: "Atalhos e dicas" },
-]
 
 type HelpImage = { id: string; image_url: string; title: string }
 
@@ -188,12 +178,63 @@ function HelpImageAddDialog({ open, onOpenChange, onSuccess }: HelpImageAddDialo
   )
 }
 
+function LightboxFullscreen({
+  image,
+  onClose,
+}: {
+  image: HelpImage
+  onClose: () => void
+}) {
+  React.useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handleEscape)
+    return () => window.removeEventListener("keydown", handleEscape)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-label={image.title}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3 bg-black/50">
+        <p className="text-sm font-medium text-white truncate flex-1">{image.title}</p>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 text-white hover:bg-white/20 hover:text-white"
+          onClick={onClose}
+          aria-label="Fechar"
+        >
+          <IconX className="size-5" />
+        </Button>
+      </div>
+      <div
+        className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto w-full"
+        onClick={(e) => e.currentTarget === e.target && onClose()}
+      >
+        <img
+          src={image.image_url}
+          alt={image.title}
+          className="max-w-full max-h-full w-auto h-auto object-contain select-none"
+          draggable={false}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function AjudaPage() {
   const isTI = useIsTI()
   const supabase = createClient()
   const [helpImages, setHelpImages] = React.useState<HelpImage[]>([])
   const [loading, setLoading] = React.useState(true)
   const [addDialogOpen, setAddDialogOpen] = React.useState(false)
+  const [search, setSearch] = React.useState("")
+  const [lightboxImage, setLightboxImage] = React.useState<HelpImage | null>(null)
 
   React.useEffect(() => {
     if (!supabase) {
@@ -220,12 +261,13 @@ export default function AjudaPage() {
     }
   }, [supabase])
 
-  const displayList =
-    helpImages.length > 0
-      ? helpImages
-      : !loading
-        ? PLACEHOLDER_IMAGES.map((p) => ({ id: p.id, image_url: p.src, title: p.title }))
-        : []
+  const allItems = helpImages
+
+  const displayList = React.useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return allItems
+    return allItems.filter((img) => img.title.toLowerCase().includes(q))
+  }, [allItems, search])
 
   const handleAddImages = React.useCallback(() => {
     setAddDialogOpen(true)
@@ -284,16 +326,38 @@ export default function AjudaPage() {
               />
             )}
           </div>
+          {/* Lightbox: tela cheia, imagem no centro */}
+          {lightboxImage && (
+            <LightboxFullscreen
+              image={lightboxImage}
+              onClose={() => setLightboxImage(null)}
+            />
+          )}
           <div className="flex-1 overflow-auto px-3 pb-4 lg:px-4">
             <div className="mt-2 w-full">
               <p className="mb-3 text-sm text-muted-foreground">
                 Imagens de ajuda: tutoriais, manuais e guias visuais.
               </p>
+              <div className="relative mb-4 max-w-xs">
+                <IconSearch className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Buscar por nome..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 h-9 bg-muted/30 border-muted-foreground/20"
+                />
+              </div>
+              {displayList.length === 0 && !loading ? (
+                <p className="text-sm text-muted-foreground">Nenhuma imagem encontrada.</p>
+              ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {displayList.map((img) => (
-                  <div
+                  <button
                     key={img.id}
-                    className="overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md"
+                    type="button"
+                    onClick={() => setLightboxImage(img)}
+                    className="overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Abrir imagem: ${img.title}`}
                   >
                     <div className="relative aspect-[4/3] w-full bg-muted min-h-[200px] sm:min-h-[240px] lg:min-h-[280px]">
                       <Image
@@ -308,9 +372,10 @@ export default function AjudaPage() {
                     <div className="p-2.5">
                       <p className="text-sm font-medium text-foreground">{img.title}</p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
+              )}
             </div>
           </div>
         </div>

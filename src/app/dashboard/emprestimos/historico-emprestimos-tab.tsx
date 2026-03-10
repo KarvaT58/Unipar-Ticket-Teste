@@ -8,12 +8,14 @@ import { getSectorLabel } from "@/lib/atendimento/sectors"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { IconEye, IconCalendarPlus } from "@tabler/icons-react"
+import { IconEye } from "@tabler/icons-react"
 import { LoanDetailDialog } from "./loan-detail-dialog"
-import { PostponeLoanDialog } from "./postpone-loan-dialog"
 import { filterLoans, type LoanSearchFilter } from "./loan-search-filter-bar"
 
-type LoanWithLenderName = Loan & { lender_name: string | null }
+type LoanWithNames = Loan & {
+  borrower_name: string | null
+  lender_name: string | null
+}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr + "T12:00:00").toLocaleDateString("pt-BR", {
@@ -23,45 +25,46 @@ function formatDate(dateStr: string) {
   })
 }
 
-function getLoanStatus(loan: Loan): "active" | "overdue" | "returned" {
-  if (loan.returned_at) return "returned"
-  const today = new Date().toISOString().slice(0, 10)
-  return loan.return_date <= today ? "overdue" : "active"
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
-export function MeusEmprestimosTab({ filter }: { filter: LoanSearchFilter }) {
+export function HistoricoEmprestimosTab({ filter }: { filter: LoanSearchFilter }) {
   const { profile } = useAuth()
   const supabase = createClient()
-  const [loans, setLoans] = useState<LoanWithLenderName[]>([])
+  const [loans, setLoans] = useState<LoanWithNames[]>([])
   const [attachmentsByLoanId, setAttachmentsByLoanId] = useState<
     Record<string, LoanAttachment[]>
   >({})
-  const [detailLoan, setDetailLoan] = useState<LoanWithLenderName | null>(null)
-  const [postponeLoan, setPostponeLoan] = useState<LoanWithLenderName | null>(null)
+  const [detailLoan, setDetailLoan] = useState<LoanWithNames | null>(null)
 
   const fetchLoans = useCallback(() => {
     if (!supabase || !profile) return
     supabase
       .from("loans")
       .select("*")
-      .eq("borrower_id", profile.id)
-      .is("returned_at", null)
-      .order("created_at", { ascending: false })
+      .not("returned_at", "is", null)
+      .or(`lender_id.eq.${profile.id},borrower_id.eq.${profile.id}`)
+      .order("returned_at", { ascending: false })
       .then(({ data }) => {
         const list = (data as Loan[]) ?? []
         if (list.length === 0) {
           setLoans([])
           return
         }
+        const borrowerIds = [...new Set(list.map((l) => l.borrower_id))]
         const lenderIds = [...new Set(list.map((l) => l.lender_id).filter(Boolean))] as string[]
-        if (lenderIds.length === 0) {
-          setLoans(list.map((l) => ({ ...l, lender_name: null })))
-          return
-        }
+        const allIds = [...new Set([...borrowerIds, ...lenderIds])]
         supabase
           .from("profiles")
           .select("id, name")
-          .in("id", lenderIds)
+          .in("id", allIds)
           .then(({ data: profiles }) => {
             const nameById: Record<string, string | null> = {}
             ;(profiles ?? []).forEach((p: { id: string; name: string | null }) => {
@@ -70,6 +73,7 @@ export function MeusEmprestimosTab({ filter }: { filter: LoanSearchFilter }) {
             setLoans(
               list.map((l) => ({
                 ...l,
+                borrower_name: nameById[l.borrower_id] ?? null,
                 lender_name: l.lender_id ? nameById[l.lender_id] ?? null : null,
               }))
             )
@@ -106,31 +110,31 @@ export function MeusEmprestimosTab({ filter }: { filter: LoanSearchFilter }) {
 
   if (!profile) {
     return (
-      <p className="text-muted-foreground">Faça login para ver seus empréstimos.</p>
+      <p className="text-muted-foreground">Faça login para ver o histórico.</p>
     )
   }
 
   if (loans.length === 0) {
     return (
       <p className="text-muted-foreground">
-        Você ainda não tem empréstimos. Quando alguém criar um empréstimo para você, ele aparecerá aqui e você receberá o aviso.
+        Nenhum empréstimo devolvido ainda. Quando um empréstimo for marcado como devolvido, ele aparecerá aqui.
       </p>
     )
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Empréstimos que eu peguei</h2>
+      <h2 className="text-lg font-semibold">Histórico de empréstimos</h2>
       <p className="text-sm text-muted-foreground">
-        Itens que outras pessoas emprestaram para você. Estes são os que você precisa devolver.
+        Todos os empréstimos que foram devolvidos, tanto os que você fez quanto os que pegou emprestado.
       </p>
       {filtered.length === 0 ? (
         <p className="text-muted-foreground text-sm">Nenhum empréstimo encontrado com os filtros aplicados.</p>
       ) : (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((loan) => {
-          const status = getLoanStatus(loan)
           const attachments = attachmentsByLoanId[loan.id] ?? []
+          const isLender = loan.lender_id === profile.id
           return (
             <Card key={loan.id} className="overflow-hidden p-4">
               <div className="flex flex-col gap-2">
@@ -138,59 +142,38 @@ export function MeusEmprestimosTab({ filter }: { filter: LoanSearchFilter }) {
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold">{loan.title}</h3>
                     <p className="text-xs text-muted-foreground">
-                      Setor: {getSectorLabel(loan.sector)}
+                      {isLender
+                        ? `Emprestado para: ${loan.borrower_name ?? "—"}`
+                        : `Emprestado por: ${loan.lender_name ?? "—"}`}
                     </p>
                   </div>
-                  <Badge
-                    variant={
-                      status === "overdue"
-                        ? "destructive"
-                        : status === "returned"
-                          ? "secondary"
-                          : "default"
-                    }
-                  >
-                    {status === "overdue"
-                      ? "Atrasado"
-                      : status === "returned"
-                        ? "Devolvido"
-                        : "Ativo"}
-                  </Badge>
+                  <Badge variant="secondary">Devolvido</Badge>
                 </div>
                 {loan.description && (
                   <p className="text-sm text-muted-foreground line-clamp-2">
                     {loan.description}
                   </p>
                 )}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <span>Devolução: {formatDate(loan.return_date)}</span>
-                    {attachments.length > 0 && (
-                      <span>{attachments.length} foto(s)</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDetailLoan(loan)}
-                      className="gap-1.5"
-                    >
-                      <IconEye className="size-4" />
-                      Ver empréstimo
-                    </Button>
-                    {status !== "returned" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPostponeLoan(loan)}
-                        className="gap-1.5"
-                      >
-                        <IconCalendarPlus className="size-4" />
-                        Adiar prazo
-                      </Button>
-                    )}
-                  </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>Setor: {getSectorLabel(loan.sector)}</span>
+                  <span>Prazo: {formatDate(loan.return_date)}</span>
+                  {loan.returned_at && (
+                    <span>Devolvido em: {formatDateTime(loan.returned_at)}</span>
+                  )}
+                  {attachments.length > 0 && (
+                    <span>{attachments.length} foto(s)</span>
+                  )}
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDetailLoan(loan)}
+                    className="gap-1.5"
+                  >
+                    <IconEye className="size-4" />
+                    Ver detalhes
+                  </Button>
                 </div>
               </div>
             </Card>
@@ -204,23 +187,6 @@ export function MeusEmprestimosTab({ filter }: { filter: LoanSearchFilter }) {
         onOpenChange={(open) => !open && setDetailLoan(null)}
         loan={detailLoan}
         attachments={detailLoan ? (attachmentsByLoanId[detailLoan.id] ?? []) : []}
-        onPostpone={(id) => {
-          const loan = loans.find((l) => l.id === id)
-          if (loan) {
-            setDetailLoan(null)
-            setPostponeLoan(loan)
-          }
-        }}
-        showPostpone
-      />
-
-      <PostponeLoanDialog
-        open={!!postponeLoan}
-        onOpenChange={(open) => !open && setPostponeLoan(null)}
-        loanId={postponeLoan?.id ?? null}
-        loanTitle={postponeLoan?.title ?? ""}
-        currentReturnDate={postponeLoan?.return_date ?? ""}
-        onSuccess={fetchLoans}
       />
     </div>
   )

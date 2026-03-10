@@ -222,9 +222,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (forTicket.length === 0) return ""
       const hasNewTicket = forTicket.some((n) => n.type === "new_ticket")
       const hasNewMessage = forTicket.some((n) => n.type === "new_message")
+      const hasReopened = forTicket.some((n) => n.type === "ticket_reopened")
       if (hasNewTicket && hasNewMessage) return "Novo chamado e nova mensagem"
       if (hasNewTicket) return "Novo chamado"
       if (hasNewMessage) return "Nova mensagem"
+      if (hasReopened) return "Chamado reaberto"
       return "Notificação"
     },
     [notifications]

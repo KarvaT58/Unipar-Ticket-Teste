@@ -62,7 +62,6 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
   const [title, setTitle] = React.useState("")
   const [description, setDescription] = React.useState("")
   const [priority, setPriority] = React.useState<TaskPriority | "">("")
-  const [tagsStr, setTagsStr] = React.useState("")
   const [dueMode, setDueMode] = React.useState<DueMode>("none")
   const [dueDate, setDueDate] = React.useState("")
   const [dueTime, setDueTime] = React.useState("")
@@ -76,7 +75,6 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
       setTitle(task.title)
       setDescription(task.description ?? "")
       setPriority((task.priority ?? "") as TaskPriority | "")
-      setTagsStr((task.tags ?? []).join(", "))
       if (task.due_date && task.due_time) {
         setDueMode("datetime")
         setDueDate(task.due_date)
@@ -99,7 +97,6 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
       setTitle("")
       setDescription("")
       setPriority("")
-      setTagsStr("")
       setDueMode("none")
       setDueDate("")
       setDueTime("")
@@ -113,10 +110,7 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
       title: title.trim() || "Nova tarefa",
       description: description.trim() || null,
       priority: (priority || null) as TaskPriority | null,
-      tags: tagsStr
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
+      tags: [],
       due_date: dueMode === "date" || dueMode === "datetime" ? dueDate || null : null,
       due_time: dueMode === "time" || dueMode === "datetime" ? dueTime || null : null,
     }
@@ -135,7 +129,6 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
     title,
     description,
     priority,
-    tagsStr,
     dueMode,
     dueDate,
     dueTime,
@@ -214,15 +207,6 @@ export function TaskDialog({ taskId, boardId, open, onOpenChange }: TaskDialogPr
                 <SelectItem value="high">Alta</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="task-tags">Tags (separadas por vírgula)</Label>
-            <Input
-              id="task-tags"
-              value={tagsStr}
-              onChange={(e) => setTagsStr(e.target.value)}
-              placeholder="ex: urgente, cliente-x"
-            />
           </div>
           <div className="grid gap-2">
             <Label>Prazo</Label>

@@ -1,5 +1,4 @@
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { HeaderNotificationIcon } from "@/components/header-notification-icon"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { GlobalSearch } from "@/components/global-search"
 
@@ -13,7 +12,6 @@ export function SiteHeader() {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <ThemeToggle />
-          <HeaderNotificationIcon />
         </div>
       </div>
     </header>

@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   IconChevronLeft,
@@ -38,6 +37,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { TicketSearchFilterBar, filterTicketsBySearchAndDate, type TicketSearchFilter } from "./ticket-search-filter-bar"
+import { TicketListItem } from "./ticket-list-item"
 import {
   insertNotification,
   insertNotificationsForSector,
@@ -77,6 +77,7 @@ export function FilaChamadosTab() {
   const supabase = createClient()
   const [queueTickets, setQueueTickets] = useState<Ticket[]>([])
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({})
+  const [assigneeNames, setAssigneeNames] = useState<Record<string, string>>({})
   const [profilesInSector, setProfilesInSector] = useState<Profile[]>([])
   const [transferSectorOpen, setTransferSectorOpen] = useState(false)
   const [transferUserOpen, setTransferUserOpen] = useState(false)
@@ -138,6 +139,29 @@ export function FilaChamadosTab() {
           map[p.id] = p.name ?? "—"
         })
         setCreatorNames(map)
+      })
+  }, [supabase, queueTickets])
+
+  useEffect(() => {
+    if (!supabase || queueTickets.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    const assigneeIds = [...new Set(queueTickets.map((t) => t.assigned_to_user_id).filter(Boolean))] as string[]
+    if (assigneeIds.length === 0) {
+      setAssigneeNames({})
+      return
+    }
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", assigneeIds)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data ?? []).forEach((p: { id: string; name: string | null }) => {
+          map[p.id] = p.name ?? "—"
+        })
+        setAssigneeNames(map)
       })
   }, [supabase, queueTickets])
 
@@ -283,7 +307,7 @@ export function FilaChamadosTab() {
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border bg-card/50">
-            <div className="p-2">
+            <div className="p-0">
               {(() => {
                 const filtered = filterTicketsBySearchAndDate(queueTickets, filter, "created_at")
                 const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -298,82 +322,70 @@ export function FilaChamadosTab() {
                   )
                 }
                 return (
-                  <div className="grid gap-0">
-                    {/* Cabeçalho: Aberto por | Título do chamado | Data | Horário | Ações */}
-                    <div className="grid grid-cols-[minmax(100px,140px)_minmax(0,1fr)_90px_64px_auto] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/30 rounded-t-lg items-center">
-                      <span>Aberto por</span>
-                      <span>Título do chamado</span>
-                      <span className="text-right">Data</span>
-                      <span className="text-right">Horário</span>
-                      <span className="text-right">Ações</span>
-                    </div>
+                  <div>
                     {pageTickets.map((t) => {
                       const hasUnread = (unreadByTicketId[t.id] ?? 0) > 0
                       return (
-                      <Card key={t.id} className="overflow-hidden transition-colors hover:bg-muted/40 py-2.5 px-4 border-0 border-b border-border/50 shadow-none rounded-none first:rounded-t-none last:rounded-b-lg">
-                        <div className="grid grid-cols-[minmax(100px,140px)_minmax(0,1fr)_90px_64px_auto] gap-3 items-center min-h-0">
-                          <Link href={`/dashboard/atendimentos/${t.id}`} className="min-w-0 flex items-center">
-                            <span className="text-sm text-foreground truncate underline decoration-muted-foreground/50 hover:decoration-foreground">
-                              {creatorNames[t.created_by] ?? "—"}
-                            </span>
-                          </Link>
-                          <Link href={`/dashboard/atendimentos/${t.id}`} className="min-w-0 flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-foreground truncate">
-                              {t.title}
-                            </span>
-                            {hasUnread && (
-                              <Badge variant="default" className="shrink-0 text-[10px] px-1.5 py-0">
+                        <TicketListItem
+                          key={t.id}
+                          ticket={t}
+                          href={`/dashboard/atendimentos/${t.id}`}
+                          creatorName={creatorNames[t.created_by] ?? "—"}
+                          assigneeName={assigneeNames[t.assigned_to_user_id ?? ""] ?? "—"}
+                          statusLabel="Na fila"
+                          statusClassName="bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                          dateDisplay={formatDateOnly(t.created_at)}
+                          timeDisplay={formatTimeOnly(t.created_at)}
+                          badge={
+                            hasUnread ? (
+                              <Badge variant="default" className="ml-1.5 shrink-0 text-[10px] px-1.5 py-0">
                                 Novo
                               </Badge>
-                            )}
-                          </Link>
-                          <Link href={`/dashboard/atendimentos/${t.id}`} className="text-xs text-muted-foreground text-right tabular-nums">
-                            {formatDateOnly(t.created_at)}
-                          </Link>
-                          <Link href={`/dashboard/atendimentos/${t.id}`} className="text-xs text-muted-foreground text-right tabular-nums">
-                            {formatTimeOnly(t.created_at)}
-                          </Link>
-                          <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              disabled={actionLoading}
-                              onClick={() => handlePegar(t)}
-                            >
-                              <IconUserCheck className="size-3.5 mr-1" />
-                              Pegar Chamado
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              disabled={actionLoading}
-                              onClick={() => {
-                                setSelectedTicket(t)
-                                setTransferUserOpen(true)
-                              }}
-                            >
-                              <IconUsers className="size-3.5 mr-1" />
-                              Transferir para funcionário
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              disabled={actionLoading}
-                              onClick={() => {
-                                setSelectedTicket(t)
-                                setTransferSectorOpen(true)
-                              }}
-                            >
-                              <IconArrowRight className="size-3.5 mr-1" />
-                              Transferir para outro setor
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-                    )})}
+                            ) : undefined
+                          }
+                          actions={
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={actionLoading}
+                                onClick={() => handlePegar(t)}
+                              >
+                                <IconUserCheck className="size-3.5 mr-1" />
+                                Pegar Chamado
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={actionLoading}
+                                onClick={() => {
+                                  setSelectedTicket(t)
+                                  setTransferUserOpen(true)
+                                }}
+                              >
+                                <IconUsers className="size-3.5 mr-1" />
+                                Transferir para funcionário
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={actionLoading}
+                                onClick={() => {
+                                  setSelectedTicket(t)
+                                  setTransferSectorOpen(true)
+                                }}
+                              >
+                                <IconArrowRight className="size-3.5 mr-1" />
+                                Transferir para outro setor
+                              </Button>
+                            </>
+                          }
+                        />
+                      )
+                    })}
                   </div>
                 )
               })()}

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { IconBell, IconCalendarEvent, IconTicket, IconMessageCircle } from "@tabler/icons-react"
 import { useNotifications } from "@/contexts/notification-context"
 import { Button } from "@/components/ui/button"
@@ -61,7 +62,13 @@ function getNotificationDescription(
 
 export function HeaderNotificationIcon() {
   const [open, setOpen] = useState(false)
+  const router = useRouter()
   const { totalUnread, unreadNotificationItems, markTicketAsRead, markNotificationAsRead } = useNotifications()
+
+  const handleVerTodas = () => {
+    setOpen(false)
+    router.push("/dashboard/atendimentos?tab=andamento")
+  }
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -150,13 +157,13 @@ export function HeaderNotificationIcon() {
               )
             })}
             <div className="border-t mt-1">
-              <Link
-                href="/dashboard/atendimentos?tab=andamento"
-                onClick={() => setOpen(false)}
-                className="block px-3 py-3 text-center text-sm font-medium text-primary hover:bg-muted/50"
+              <button
+                type="button"
+                onClick={handleVerTodas}
+                className="block w-full px-3 py-3 text-center text-sm font-medium text-primary hover:bg-muted/50"
               >
                 Ver todas
-              </Link>
+              </button>
             </div>
           </div>
         )}

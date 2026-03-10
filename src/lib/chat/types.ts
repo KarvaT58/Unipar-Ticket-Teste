@@ -10,6 +10,8 @@ export type ChatMessage = {
   file_name: string | null
   is_priority: boolean
   created_at: string
+  edited_at?: string | null
+  deleted_at?: string | null
 }
 
 export type ChatConversation = {

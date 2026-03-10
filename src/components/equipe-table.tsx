@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import {
@@ -39,8 +38,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card } from "@/components/ui/card"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
+import { TicketListItem } from "@/app/dashboard/atendimentos/ticket-list-item"
 import { usePresence } from "@/contexts/presence-context"
 import { useChat } from "@/contexts/chat-context"
 import { useAuth } from "@/contexts/auth-context"
@@ -71,6 +70,21 @@ function formatDate(iso: string) {
   })
 }
 
+function formatDateOnly(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+}
+
+function formatTimeOnly(iso: string) {
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 function isDateInRange(dateIso: string | null, from: string, to: string): boolean {
   if (!dateIso) return false
   const d = new Date(dateIso)
@@ -94,6 +108,7 @@ export function EquipeTable() {
   const [members, setMembers] = useState<TeamMember[]>([])
   const [myTickets, setMyTickets] = useState<Ticket[]>([])
   const [closedTickets, setClosedTickets] = useState<Ticket[]>([])
+  const [creatorNames, setCreatorNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [dateFrom, setDateFrom] = useState("")
@@ -196,6 +211,18 @@ export function EquipeTable() {
     fetchTeam()
   }, [fetchTeam])
 
+  // Refetch team when user switches to equipe tab so status is always fresh
+  useEffect(() => {
+    if (activeTab === "equipe") fetchTeam()
+  }, [activeTab, fetchTeam])
+
+  // Polling: atualiza a lista de status a cada 8s na aba Equipe (garante atualização mesmo se Realtime falhar)
+  useEffect(() => {
+    if (activeTab !== "equipe" || !supabase) return
+    const interval = setInterval(fetchTeam, 8000)
+    return () => clearInterval(interval)
+  }, [activeTab, supabase, fetchTeam])
+
   useEffect(() => {
     fetchMyTickets()
   }, [fetchMyTickets])
@@ -205,6 +232,33 @@ export function EquipeTable() {
   }, [fetchClosedTickets])
 
   useEffect(() => {
+    if (!supabase || (myTickets.length === 0 && closedTickets.length === 0)) {
+      setCreatorNames({})
+      return
+    }
+    const allCreatorIds = [
+      ...myTickets.map((t) => t.created_by),
+      ...closedTickets.map((t) => t.created_by),
+    ].filter(Boolean) as string[]
+    const creatorIds = [...new Set(allCreatorIds)]
+    if (creatorIds.length === 0) {
+      setCreatorNames({})
+      return
+    }
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", creatorIds)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data ?? []).forEach((p: { id: string; name: string | null }) => {
+          map[p.id] = p.name ?? "—"
+        })
+        setCreatorNames(map)
+      })
+  }, [supabase, myTickets, closedTickets])
+
+  useEffect(() => {
     if (!supabase) return
     const channel = supabase
       .channel("equipe-profiles-realtime")
@@ -212,30 +266,39 @@ export function EquipeTable() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
         (payload) => {
-          const row = payload.new as Partial<TeamMember> & { id: string }
-          if (!row?.id) return
+          const raw = payload.new as Record<string, unknown> | null | undefined
+          if (!raw || typeof raw !== "object") return
+          const id = raw.id ?? raw.Id
+          if (id == null) return
+          const rowId = String(id)
+          const getVal = (key: string) => {
+            const v = raw[key] ?? raw[key.toLowerCase()]
+            return v !== undefined ? v : null
+          }
           setMembers((prev) =>
             prev.map((m) =>
-              m.id === row.id
+              m.id === rowId
                 ? {
                     ...m,
-                    name: row.name ?? m.name,
-                    email: row.email ?? m.email,
-                    department: row.department ?? m.department,
-                    role: row.role ?? m.role,
-                    avatar_url: row.avatar_url !== undefined ? row.avatar_url : m.avatar_url,
-                    user_status: row.user_status !== undefined ? row.user_status : m.user_status,
+                    name: (getVal("name") as string) ?? m.name,
+                    email: (getVal("email") as string) ?? m.email,
+                    department: (getVal("department") as string) ?? m.department,
+                    role: (getVal("role") as string) ?? m.role,
+                    avatar_url: getVal("avatar_url") !== undefined ? (getVal("avatar_url") as string | null) : m.avatar_url,
+                    user_status: getVal("user_status") !== undefined ? (getVal("user_status") as string | null) : m.user_status,
                   }
                 : m
             )
           )
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") fetchTeam()
+      })
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase])
+  }, [supabase, fetchTeam])
 
   const pageCount = Math.max(1, Math.ceil(filteredMembers.length / pageSize))
   const currentPage = Math.min(pageIndex, pageCount - 1)
@@ -270,21 +333,11 @@ export function EquipeTable() {
         <div className="flex flex-col gap-4 px-4 lg:px-6 sm:flex-row sm:items-center sm:justify-between">
           <TabsList className="h-9 w-full sm:w-auto">
             <TabsTrigger value="equipe">Equipe</TabsTrigger>
-            <TabsTrigger value="em-atendimentos" className="relative">
+            <TabsTrigger value="em-atendimentos">
               Em atendimentos
-              {myTickets.length > 0 && (
-                <span className="ml-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-muted-foreground/20 px-1.5 text-xs font-medium text-foreground">
-                  {myTickets.length}
-                </span>
-              )}
             </TabsTrigger>
-            <TabsTrigger value="historico" className="relative">
+            <TabsTrigger value="historico">
               Histórico
-              {closedTickets.length > 0 && (
-                <span className="ml-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-muted-foreground/20 px-1.5 text-xs font-medium text-foreground">
-                  {closedTickets.length}
-                </span>
-              )}
             </TabsTrigger>
           </TabsList>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -501,7 +554,7 @@ export function EquipeTable() {
                 <p className="text-sm text-muted-foreground mb-2">
                   Chamados em andamento atribuídos a você.
                 </p>
-                <div className="overflow-hidden rounded-lg border">
+                <div className="overflow-hidden rounded-xl border bg-card/50">
                   {filteredMyTickets.length === 0 ? (
                     <div className="flex h-48 items-center justify-center text-muted-foreground px-4">
                       {myTickets.length === 0
@@ -509,25 +562,24 @@ export function EquipeTable() {
                         : "Nenhum chamado encontrado para a busca ou filtro de data."}
                     </div>
                   ) : (
-                    <div className="divide-y p-2">
+                    <div>
                       {(() => {
                         const pageCountAtend = Math.max(1, Math.ceil(filteredMyTickets.length / pageSize))
                         const currentPageAtend = Math.min(pageIndex, pageCountAtend - 1)
                         const startAtend = currentPageAtend * pageSize
                         const pageTicketsAtend = filteredMyTickets.slice(startAtend, startAtend + pageSize)
                         return pageTicketsAtend.map((t) => (
-                          <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-                            <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none rounded-md">
-                              <div className="flex items-center justify-between gap-2 min-h-0">
-                                <div className="min-w-0 flex-1">
-                                  <h3 className="text-sm font-semibold truncate">{t.title}</h3>
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {formatDate(t.created_at)}
-                                  </p>
-                                </div>
-                              </div>
-                            </Card>
-                          </Link>
+                          <TicketListItem
+                            key={t.id}
+                            ticket={t}
+                            href={`/dashboard/atendimentos/${t.id}`}
+                            creatorName={creatorNames[t.created_by] ?? "—"}
+                            assigneeName={profile?.name ?? "—"}
+                            statusLabel="Em andamento"
+                            statusClassName="bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                            dateDisplay={formatDateOnly(t.created_at)}
+                            timeDisplay={formatTimeOnly(t.created_at)}
+                          />
                         ))
                       })()}
                     </div>
@@ -634,7 +686,7 @@ export function EquipeTable() {
                 <p className="text-sm text-muted-foreground mb-2">
                   Chamados de outros setores que você atendeu e encerrou.
                 </p>
-                <div className="overflow-hidden rounded-lg border">
+                <div className="overflow-hidden rounded-xl border bg-card/50">
                   {filteredClosedTickets.length === 0 ? (
                     <div className="flex h-48 items-center justify-center text-muted-foreground px-4">
                       {closedTickets.length === 0
@@ -642,26 +694,28 @@ export function EquipeTable() {
                         : "Nenhum chamado encontrado para a busca ou filtro de data."}
                     </div>
                   ) : (
-                    <div className="divide-y p-2">
+                    <div>
                       {(() => {
                         const pageCountHist = Math.max(1, Math.ceil(filteredClosedTickets.length / pageSize))
                         const currentPageHist = Math.min(pageIndex, pageCountHist - 1)
                         const startHist = currentPageHist * pageSize
                         const pageTicketsHist = filteredClosedTickets.slice(startHist, startHist + pageSize)
-                        return pageTicketsHist.map((t) => (
-                          <Link key={t.id} href={`/dashboard/atendimentos/${t.id}`}>
-                            <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md py-2 px-4 border-0 shadow-none rounded-md">
-                              <div className="flex items-center justify-between gap-2 min-h-0">
-                                <div className="min-w-0 flex-1">
-                                  <h3 className="text-sm font-semibold truncate">{t.title}</h3>
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {t.closed_at ? formatDate(t.closed_at) : formatDate(t.created_at)}
-                                  </p>
-                                </div>
-                              </div>
-                            </Card>
-                          </Link>
-                        ))
+                        return pageTicketsHist.map((t) => {
+                          const dateIso = t.closed_at ?? t.created_at
+                          return (
+                            <TicketListItem
+                              key={t.id}
+                              ticket={t}
+                              href={`/dashboard/atendimentos/${t.id}`}
+                              creatorName={creatorNames[t.created_by] ?? "—"}
+                              assigneeName={profile?.name ?? "—"}
+                              statusLabel="Encerrado"
+                              statusClassName="bg-muted text-foreground/90"
+                              dateDisplay={formatDateOnly(dateIso)}
+                              timeDisplay={formatTimeOnly(dateIso)}
+                            />
+                          )
+                        })
                       })()}
                     </div>
                   )}

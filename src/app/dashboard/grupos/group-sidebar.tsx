@@ -34,7 +34,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import type { ChatGroupWithPreview } from "@/lib/chat/group-types"
 
-export function GroupSidebar() {
+export function GroupSidebar({
+  createOpen: controlledCreateOpen,
+  onOpenChange: onControlledOpenChange,
+}: {
+  createOpen?: boolean
+  onOpenChange?: (open: boolean) => void
+} = {}) {
   const supabase = createClient()
   const { profile } = useAuth()
   const {
@@ -48,7 +54,9 @@ export function GroupSidebar() {
     isLoadingGroups,
   } = useGroupChat()
   const [search, setSearch] = React.useState("")
-  const [createOpen, setCreateOpen] = React.useState(false)
+  const [internalCreateOpen, setInternalCreateOpen] = React.useState(false)
+  const createOpen = onControlledOpenChange ? (controlledCreateOpen ?? false) : internalCreateOpen
+  const setCreateOpen = onControlledOpenChange ?? setInternalCreateOpen
   const [groupName, setGroupName] = React.useState("")
   const [teamUsers, setTeamUsers] = React.useState<
     Array<{ id: string; name: string; avatar_url: string | null; department: string | null }>
@@ -380,7 +388,7 @@ function GroupItem({
               Cancelar
             </Button>
             <Button onClick={handleSaveEdit} disabled={saving}>
-              {saving ? "A guardar..." : "Guardar"}
+              {saving ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </DialogContent>
@@ -401,7 +409,7 @@ function GroupItem({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={saving}
             >
-              {saving ? "A apagar..." : "Apagar"}
+              {saving ? "Apagando..." : "Apagar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

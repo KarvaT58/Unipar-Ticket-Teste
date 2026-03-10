@@ -12,6 +12,7 @@ import { GroupSidebar } from "./group-sidebar"
 import { GroupConversationView } from "./group-conversation-view"
 
 export default function GruposPage() {
+  const [createGroupOpen, setCreateGroupOpen] = React.useState(false)
   const { activeGroupId, groups } = useGroupChat()
   const activeGroup = React.useMemo(
     () => groups.find((g) => g.id === activeGroupId) ?? null,
@@ -39,8 +40,14 @@ export default function GruposPage() {
           />
           <Separator className="shrink-0" />
           <div className="flex min-h-0 flex-1 overflow-hidden p-0">
-            <GroupSidebar />
-            <GroupConversationView group={activeGroup} />
+            <GroupSidebar
+              createOpen={createGroupOpen}
+              onOpenChange={setCreateGroupOpen}
+            />
+            <GroupConversationView
+              group={activeGroup}
+              onOpenCreateGroup={() => setCreateGroupOpen(true)}
+            />
           </div>
         </div>
       </SidebarInset>

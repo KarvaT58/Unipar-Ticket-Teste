@@ -26,7 +26,7 @@ import {
 import { IconCalendar, IconPlus, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { Announcement, AnnouncementAttachment } from "@/lib/announcements/types"
+import type { Announcement, AnnouncementAttachment, AudienceType } from "@/lib/announcements/types"
 
 const BUCKET = "announcement-attachments"
 const ACCEPTED = "image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip"
@@ -89,6 +89,10 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
   const [description, setDescription] = React.useState("")
   const [eventDate, setEventDate] = React.useState("")
   const [showAsPopup, setShowAsPopup] = React.useState(false)
+  const [audienceType, setAudienceType] = React.useState<AudienceType>("all")
+  const [audienceUserIds, setAudienceUserIds] = React.useState<string[]>([])
+  const [profiles, setProfiles] = React.useState<Array<{ id: string; name: string }>>([])
+  const [profileSearch, setProfileSearch] = React.useState("")
   const [pendingFiles, setPendingFiles] = React.useState<PendingFile[]>([])
   const [existingAttachments, setExistingAttachments] = React.useState<AnnouncementAttachment[]>([])
   const [loading, setLoading] = React.useState(false)
@@ -105,16 +109,29 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
       setEventDate(editAnnouncement.event_date ? editAnnouncement.event_date.slice(0, 10) : "")
       setShowAsPopup(editAnnouncement.show_as_popup)
       setExistingAttachments(editAnnouncement.attachments ?? [])
+      setAudienceType(editAnnouncement.audience_type ?? "all")
+      setAudienceUserIds(editAnnouncement.audience_user_ids ?? [])
       setPendingFiles([])
     } else {
       setTitle("")
       setDescription("")
       setEventDate("")
       setShowAsPopup(false)
+      setAudienceType("all")
+      setAudienceUserIds([])
       setExistingAttachments([])
       setPendingFiles([])
     }
   }, [open, editAnnouncement])
+
+  React.useEffect(() => {
+    if (!open || !supabase) return
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .order("name")
+      .then(({ data }) => setProfiles((data as Array<{ id: string; name: string }>) ?? []))
+  }, [open, supabase])
 
   const addFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files
@@ -149,18 +166,42 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
     setLoading(true)
     try {
       if (isEdit && editAnnouncement) {
-        const { error: updateError } = await supabase
+        let updateError = (await supabase
           .from("announcements")
           .update({
             title: titleTrim,
             description: description.trim() || null,
             event_date: eventDate || null,
             show_as_popup: showAsPopup,
+            audience_type: audienceType,
           })
-          .eq("id", editAnnouncement.id)
+          .eq("id", editAnnouncement.id)).error
+        if (updateError != null) {
+          updateError = (await supabase
+            .from("announcements")
+            .update({
+              title: titleTrim,
+              description: description.trim() || null,
+              event_date: eventDate || null,
+              show_as_popup: showAsPopup,
+            })
+            .eq("id", editAnnouncement.id)).error
+        }
         if (updateError) throw updateError
+        const { error: delAudErr } = await supabase
+          .from("announcement_audience_users")
+          .delete()
+          .eq("announcement_id", editAnnouncement.id)
+        if (delAudErr == null && audienceType === "specific_users" && audienceUserIds.length > 0) {
+          await supabase.from("announcement_audience_users").insert(
+            audienceUserIds.map((user_id) => ({
+              announcement_id: editAnnouncement.id,
+              user_id,
+            }))
+          )
+        }
         const toRemove = (editAnnouncement.attachments ?? []).filter(
-          (a) => !existingAttachments.some((e) => e.id === a.id)
+          (a) => !existingAttachments.some((ex) => ex.id === a.id)
         )
         for (const a of toRemove) {
           await supabase.storage.from(BUCKET).remove([a.file_path])
@@ -181,7 +222,7 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
         }
         toast.success("Anúncio atualizado.")
       } else {
-        const { data: inserted, error: insertError } = await supabase
+        let result = await supabase
           .from("announcements")
           .insert({
             title: titleTrim,
@@ -189,11 +230,33 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
             event_date: eventDate || null,
             created_by: profile.id,
             show_as_popup: showAsPopup,
+            audience_type: audienceType,
           })
           .select("id")
           .single()
-        if (insertError || !inserted) throw insertError ?? new Error("Falha ao criar")
-        const aid = inserted.id
+        if (result.error) {
+          result = await supabase
+            .from("announcements")
+            .insert({
+              title: titleTrim,
+              description: description.trim() || null,
+              event_date: eventDate || null,
+              created_by: profile.id,
+              show_as_popup: showAsPopup,
+            })
+            .select("id")
+            .single()
+        }
+        if (result.error || !result.data) throw result.error ?? new Error("Falha ao criar")
+        const aid = result.data.id
+        if (audienceType === "specific_users" && audienceUserIds.length > 0) {
+          const { error: audErr } = await supabase.from("announcement_audience_users").insert(
+            audienceUserIds.map((user_id) => ({ announcement_id: aid, user_id }))
+          )
+          if (audErr) {
+            // table may not exist yet (migration not applied)
+          }
+        }
         for (const { file } of pendingFiles) {
           const path = `${aid}/${crypto.randomUUID()}-${file.name}`
           const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false })
@@ -205,8 +268,11 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
             file_name: file.name,
           })
         }
-        const { data: profiles } = await supabase.from("profiles").select("id")
-        const userIds = (profiles ?? []).map((p: { id: string }) => p.id)
+        const { data: profilesList } = await supabase.from("profiles").select("id")
+        const userIds =
+          audienceType === "specific_users" && audienceUserIds.length > 0
+            ? audienceUserIds
+            : (profilesList ?? []).map((p: { id: string }) => p.id)
         if (userIds.length > 0) {
           await supabase.from("notifications").insert(
             userIds.map((userId: string) => ({
@@ -305,6 +371,72 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
             </Popover>
           </div>
           <div>
+            <Label>Quem pode ver este anúncio</Label>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="audience"
+                  checked={audienceType === "all"}
+                  onChange={() => setAudienceType("all")}
+                  className="size-4"
+                />
+                <span className="text-sm">Todos</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="audience"
+                  checked={audienceType === "specific_users"}
+                  onChange={() => setAudienceType("specific_users")}
+                  className="size-4"
+                />
+                <span className="text-sm">Apenas colaboradores escolhidos</span>
+              </label>
+              {audienceType === "specific_users" && (
+                <div className="rounded-md border p-2">
+                  <Input
+                    placeholder="Buscar por nome..."
+                    value={profileSearch}
+                    onChange={(e) => setProfileSearch(e.target.value)}
+                    className="mb-2 h-8 text-sm"
+                  />
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {profiles
+                      .filter(
+                        (p) =>
+                          !profileSearch.trim() ||
+                          p.name.toLowerCase().includes(profileSearch.trim().toLowerCase())
+                      )
+                      .map((p) => (
+                        <label
+                          key={p.id}
+                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted"
+                        >
+                          <Checkbox
+                            checked={audienceUserIds.includes(p.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setAudienceUserIds((prev) => [...prev, p.id])
+                              } else {
+                                setAudienceUserIds((prev) => prev.filter((id) => id !== p.id))
+                              }
+                            }}
+                          />
+                          <span className="text-sm">{p.name}</span>
+                        </label>
+                      ))}
+                  </div>
+                  {audienceUserIds.length > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {audienceUserIds.length} selecionado(s)
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div>
             <Label>Anexos (imagens, vídeos, áudios, documentos)</Label>
             <div className="mt-2 flex flex-wrap gap-2 items-end">
               {existingAttachments.map((a) => (
@@ -356,7 +488,8 @@ export function AnnouncementFormDialog({ open, onOpenChange, editAnnouncement, o
               onCheckedChange={(c) => setShowAsPopup(!!c)}
             />
             <Label htmlFor="show_as_popup" className="cursor-pointer text-sm font-normal">
-              Exibir aviso no centro da tela para todos (trava 5s)
+              Exibir aviso no centro da tela (1x na publicação e 1x no dia do evento)
+              {audienceType === "all" ? " para todos" : " para os colaboradores escolhidos"}
             </Label>
           </div>
           <DialogFooter>

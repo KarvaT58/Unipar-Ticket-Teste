@@ -29,6 +29,8 @@ export type ChatGroupMessage = {
   file_name: string | null
   is_priority: boolean
   created_at: string
+  edited_at?: string | null
+  deleted_at?: string | null
 }
 
 /** For use with MessageBubble: same shape as ChatMessage where it matters (id, sender_id, content, message_type, file_path, file_name, is_priority, created_at) */
